@@ -38,7 +38,7 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-24.04
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' || inputs.android_only == true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -75,7 +75,7 @@ jobs:
   build-cli:
     needs: version
     runs-on: ubuntu-24.04
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' || inputs.android_only == true
     steps:
       - uses: actions/checkout@v4
         with:
