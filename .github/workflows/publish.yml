@@ -117,41 +117,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - host: macos-latest
-            target: x86_64-apple-darwin
-          - host: macos-latest
-            target: aarch64-apple-darwin
-          # github-hosted: blacksmith lacks ARM64 MSVC cross-compilation toolchain
-          - host: windows-2025
-            target: aarch64-pc-windows-msvc
-          - host: windows-2025
-            target: x86_64-pc-windows-msvc
-          - host: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-          - host: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-          - host: ubuntu-24.04
-            target: aarch64-linux-android
+        settings: ${{ fromJson(inputs.android_only && '[{"host":"ubuntu-24.04","target":"aarch64-linux-android"}]' || '[{"host":"macos-latest","target":"x86_64-apple-darwin"},{"host":"macos-latest","target":"aarch64-apple-darwin"},{"host":"windows-2025","target":"aarch64-pc-windows-msvc"},{"host":"windows-2025","target":"x86_64-pc-windows-msvc"},{"host":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu"},{"host":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-gnu"},{"host":"ubuntu-24.04","target":"aarch64-linux-android"}]') }}
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-tags: true
 
-      - name: Filter targets for Android only
-        if: inputs.android_only == true && matrix.settings.target != 'aarch64-linux-android'
-        run: exit 0 # This won't stop the job, but we'll wrap the rest in 'if'
-
       - uses: apple-actions/import-codesign-certs@v2
-        if: inputs.android_only != true && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         with:
           keychain: build
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Verify Certificate
-        if: inputs.android_only != true && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
@@ -159,35 +140,33 @@ jobs:
           echo "Certificate imported."
 
       - name: Setup Apple API Key
-        if: inputs.android_only != true && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         run: |
           echo "${{ secrets.APPLE_API_KEY_PATH }}" > "$RUNNER_TEMP/apple-api-key.p8"
 
       - uses: ./.github/actions/setup-bun
-        if: inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android'
 
       - uses: actions/setup-node@v4
-        if: inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android'
         with:
           node-version: "24"
 
       - name: Setup Java
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.target, 'android')
+        if: contains(matrix.settings.target, 'android')
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
       - name: Setup Android SDK
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.target, 'android')
+        if: contains(matrix.settings.target, 'android')
         uses: android-actions/setup-android@v3
 
       - name: Install Android NDK
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.target, 'android')
+        if: contains(matrix.settings.target, 'android')
         run: sdkmanager "ndk;26.1.10909125"
 
       - name: Cache apt packages
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.host, 'ubuntu')
+        if: contains(matrix.settings.host, 'ubuntu')
         uses: actions/cache@v4
         with:
           path: ~/apt-cache
@@ -196,7 +175,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.settings.target }}-apt-
 
       - name: install dependencies (ubuntu only)
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.host, 'ubuntu')
+        if: contains(matrix.settings.host, 'ubuntu')
         run: |
           mkdir -p ~/apt-cache && chmod -R a+rw ~/apt-cache
           sudo apt-get update
@@ -204,19 +183,16 @@ jobs:
           sudo chmod -R a+rw ~/apt-cache
 
       - name: install Rust stable
-        if: inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.settings.target }}
 
       - uses: Swatinem/rust-cache@v2
-        if: inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android'
         with:
           workspaces: packages/desktop/src-tauri
           shared-key: ${{ matrix.settings.target }}
 
       - name: Prepare
-        if: inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android'
         run: |
           cd packages/desktop
           bun ./scripts/prepare.ts
@@ -228,13 +204,13 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
 
       - name: Resolve tauri portable SHA
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.host, 'ubuntu')
+        if: contains(matrix.settings.host, 'ubuntu')
         run: echo "TAURI_PORTABLE_SHA=$(git ls-remote https://github.com/tauri-apps/tauri.git refs/heads/feat/truly-portable-appimage | cut -f1)" >> "$GITHUB_ENV"
 
       # Fixes AppImage build issues, can be removed when https://github.com/tauri-apps/tauri/pull/12491 is released
       - name: Install tauri-cli from portable appimage branch
         uses: taiki-e/cache-cargo-install-action@v3
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.host, 'ubuntu')
+        if: contains(matrix.settings.host, 'ubuntu')
         with:
           tool: tauri-cli
           git: https://github.com/tauri-apps/tauri
@@ -242,7 +218,7 @@ jobs:
           rev: ${{ env.TAURI_PORTABLE_SHA }}
 
       - name: Show tauri-cli version
-        if: (inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android') && contains(matrix.settings.host, 'ubuntu')
+        if: contains(matrix.settings.host, 'ubuntu')
         run: cargo tauri --version
 
       - name: Setup git committer
@@ -254,7 +230,7 @@ jobs:
           opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET || 'dummy' }}
 
       - name: Build and upload artifacts
-        if: inputs.android_only != true && matrix.settings.target != 'aarch64-linux-android'
+        if: matrix.settings.target != 'aarch64-linux-android'
         uses: tauri-apps/tauri-action@390cbe447412ced1303d35abe75287949e43437a
         timeout-minutes: 60
         with:

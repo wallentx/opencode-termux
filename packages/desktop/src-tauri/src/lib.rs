@@ -320,12 +320,11 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_os::init())
-        .plugin(
-            tauri_plugin_window_state::Builder::new()
+        .plugin(tauri_plugin_window_state::init(|builder| {
+            builder
                 .with_state_flags(window_state_flags())
-                .with_denylist(&[LoadingWindow::LABEL])
-                .build(),
-        )
+                .with_denylist(&[LoadingWindow::LABEL]);
+        }))
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
