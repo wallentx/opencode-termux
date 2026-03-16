@@ -48,10 +48,11 @@ jobs:
 
       - name: Setup git committer
         id: committer
+        if: github.repository == 'anomalyco/opencode'
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+          opencode-app-id: ${{ vars.OPENCODE_APP_ID || 'dummy' }}
+          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET || 'dummy' }}
 
       - name: Install OpenCode
         if: inputs.bump || inputs.version
@@ -61,7 +62,7 @@ jobs:
         run: |
           ./script/version.ts
         env:
-          GH_TOKEN: ${{ steps.committer.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           OPENCODE_BUMP: ${{ inputs.bump }}
           OPENCODE_VERSION: ${{ inputs.version }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
@@ -85,10 +86,11 @@ jobs:
 
       - name: Setup git committer
         id: committer
+        if: github.repository == 'anomalyco/opencode'
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+          opencode-app-id: ${{ vars.OPENCODE_APP_ID || 'dummy' }}
+          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET || 'dummy' }}
 
       - name: Build
         id: build
@@ -98,7 +100,7 @@ jobs:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
           GH_REPO: ${{ needs.version.outputs.repo }}
-          GH_TOKEN: ${{ steps.committer.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -153,7 +155,7 @@ jobs:
         run: |
           CERT_INFO=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application")
           CERT_ID=$(echo "$CERT_INFO" | awk -F'"' '{print $2}')
-          echo "CERT_ID=$CERT_ID" >> $GITHUB_ENV
+          echo "CERT_ID=$CERT_ID" >> "$GITHUB_ENV"
           echo "Certificate imported."
 
       - name: Setup Apple API Key
@@ -220,7 +222,7 @@ jobs:
           bun ./scripts/prepare.ts
         env:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
-          GITHUB_TOKEN: ${{ steps.committer.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           RUST_TARGET: ${{ matrix.settings.target }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_RUN_ID: ${{ github.run_id }}
@@ -245,11 +247,11 @@ jobs:
 
       - name: Setup git committer
         id: committer
-        if: inputs.android_only != true || matrix.settings.target == 'aarch64-linux-android'
+        if: github.repository == 'anomalyco/opencode'
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+          opencode-app-id: ${{ vars.OPENCODE_APP_ID || 'dummy' }}
+          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET || 'dummy' }}
 
       - name: Build and upload artifacts
         if: inputs.android_only != true && matrix.settings.target != 'aarch64-linux-android'
@@ -268,7 +270,7 @@ jobs:
           repo: ${{ (github.ref_name == 'beta' && 'opencode-beta') || '' }}
           releaseCommitish: ${{ github.sha }}
         env:
-          GITHUB_TOKEN: ${{ steps.committer.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           TAURI_BUNDLER_NEW_APPIMAGE_FORMAT: true
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -287,7 +289,7 @@ jobs:
           cargo tauri android build --apk --target aarch64 --config "${{ (github.ref_name == 'beta' && './src-tauri/tauri.beta.conf.json') || './src-tauri/tauri.prod.conf.json' }}"
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
-          GITHUB_TOKEN: ${{ steps.committer.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Upload Android APK Artifact
         if: matrix.settings.target == 'aarch64-linux-android'
@@ -366,10 +368,11 @@ jobs:
 
       - name: Setup git committer
         id: committer
+        if: github.repository == 'anomalyco/opencode'
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+          opencode-app-id: ${{ vars.OPENCODE_APP_ID || 'dummy' }}
+          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET || 'dummy' }}
 
       - name: Prepare
         run: bun ./scripts/prepare.ts
@@ -394,7 +397,7 @@ jobs:
         timeout-minutes: 60
         env:
           OPENCODE_CHANNEL: ${{ (github.ref_name == 'beta' && 'beta') || 'prod' }}
-          GH_TOKEN: ${{ steps.committer.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
           CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_API_KEY: ${{ runner.temp }}/apple-api-key.p8
@@ -453,10 +456,11 @@ jobs:
 
       - name: Setup git committer
         id: committer
+        if: github.repository == 'anomalyco/opencode'
         uses: ./.github/actions/setup-git-committer
         with:
-          opencode-app-id: ${{ vars.OPENCODE_APP_ID }}
-          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET }}
+          opencode-app-id: ${{ vars.OPENCODE_APP_ID || 'dummy' }}
+          opencode-app-secret: ${{ secrets.OPENCODE_APP_SECRET || 'dummy' }}
 
       - uses: actions/download-artifact@v4
         with:
@@ -493,7 +497,7 @@ jobs:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
           AUR_KEY: ${{ secrets.AUR_KEY }}
-          GITHUB_TOKEN: ${{ steps.committer.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           GH_REPO: ${{ needs.version.outputs.repo }}
           NPM_CONFIG_PROVENANCE: false
           LATEST_YML_DIR: /tmp/latest-yml
