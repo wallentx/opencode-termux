@@ -12,12 +12,9 @@ mod window_customizer;
 mod windows;
 
 use crate::cli::CommandChild;
-use futures::{FutureExt, TryFutureExt};
+use futures::FutureExt;
 use std::{
-    env,
-    future::Future,
     net::TcpListener,
-    path::PathBuf,
     process::Command,
     sync::{Arc, Mutex},
     time::Duration,
@@ -30,8 +27,6 @@ use tokio::{
     sync::{oneshot, watch},
     time::{sleep, timeout},
 };
-
-use tauri_plugin_window_state::Builder as WindowStateBuilder;
 
 use crate::cli::{sqlite_migration::SqliteMigrationProgress, sync_cli};
 use crate::constants::*;
@@ -248,7 +243,7 @@ async fn initialize(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = make_specta_builder();
+    let specta_builder = make_specta_builder();
 
     #[cfg(all(target_os = "macos", not(debug_assertions)))]
     let _ = std::process::Command::new("killall")
@@ -272,12 +267,12 @@ pub fn run() {
 
     builder = builder
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_window_state::init(|builder: &mut WindowStateBuilder| {
+        .plugin(tauri_plugin_window_state::init(|builder| {
             builder
                 .with_state_flags(window_state_flags())
-                .with_denylist(&[LoadingWindow::LABEL]);
+                .with_denylist(&[LoadingWindow::LABEL])
         }))
-        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
@@ -293,7 +288,7 @@ pub fn run() {
     }
 
     let mut builder = builder
-        .invoke_handler(builder.invoke_handler())
+        .invoke_handler(specta_builder.invoke_handler())
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -305,7 +300,7 @@ pub fn run() {
             // ensuring all buffered logs are flushed on shutdown.
             handle.manage(logging::init(&log_dir));
 
-            builder.mount_events(&handle);
+            specta_builder.mount_events(app);
             tauri::async_runtime::spawn(initialize(handle));
 
             Ok(())
