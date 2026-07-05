@@ -151,7 +151,11 @@ jobs:
       - name: Install Bun build toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-21 lld-21 ninja-build cmake
+          sudo apt-get install -y --no-install-recommends wget gnupg software-properties-common ninja-build cmake
+          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          chmod +x "$RUNNER_TEMP/llvm.sh"
+          sudo "$RUNNER_TEMP/llvm.sh" 21
+          sudo apt-get install -y --no-install-recommends clang-21 lld-21
 
       - name: Build Android Bun runtime with FFI
         run: |
