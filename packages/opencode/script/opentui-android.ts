@@ -25,7 +25,7 @@ if (!core) {
 }
 
 const name = "@opentui/core-android-arm64"
-const native = path.join(path.dirname(core), "core-android-arm64")
+const native = path.join(core, "android-arm64")
 const head = JSON.parse((await $`npm view @opentui/core@${ver} gitHead --json`.text()).trim())
 
 if (!head) {
@@ -130,7 +130,7 @@ if (fs.existsSync(license)) {
 }
 
 const block = `  if (process.platform === "android") {
-    if (process.arch === "arm64") return await import("${name}")
+    if (process.arch === "arm64") return await import("./android-arm64/index.bun.js")
   }
 
 `
