@@ -34,7 +34,21 @@ if (!head) {
 
 const tmp = process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? os.tmpdir()
 const src = path.join(tmp, `opentui-${ver}-${head.slice(0, 12)}`)
-const sysroot = androidNdkSysroot()
+const ndk = androidNdk()
+const libc = path.join(tmp, `android-ndk-${ndk.api}.libc`)
+
+await Bun.write(
+  libc,
+  [
+    `include_dir=${path.join(ndk.sysroot, "usr/include")}`,
+    `sys_include_dir=${ndk.sysInclude}`,
+    `crt_dir=${ndk.libDir}`,
+    "msvc_lib_dir=",
+    "kernel32_lib_dir=",
+    "gcc_dir=",
+    "",
+  ].join("\n"),
+)
 
 if (!fs.existsSync(path.join(src, "packages/core/src/zig/build.zig"))) {
   fs.mkdirSync(src, { recursive: true })
@@ -44,7 +58,7 @@ if (!fs.existsSync(path.join(src, "packages/core/src/zig/build.zig"))) {
   await $`git checkout --detach FETCH_HEAD`.cwd(src)
 }
 
-await $`zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseFast --sysroot ${sysroot}`.cwd(
+await $`zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseFast --sysroot ${ndk.sysroot} --libc ${libc} --search-prefix ${ndk.libDir}`.cwd(
   path.join(src, "packages/core/src/zig"),
 )
 
@@ -140,7 +154,7 @@ if (patched === 0) {
   throw new Error("Did not patch @opentui/core native loader for Android")
 }
 
-function androidNdkSysroot() {
+function androidNdk() {
   const roots = [
     process.env.ANDROID_NDK_ROOT,
     process.env.ANDROID_NDK_HOME,
@@ -179,5 +193,37 @@ function androidNdkSysroot() {
     throw new Error("Cannot find Android NDK sysroot. Set ANDROID_NDK_ROOT or ANDROID_NDK_HOME.")
   }
 
-  return sysroot
+  const libRoot = path.join(sysroot, "usr/lib/aarch64-linux-android")
+  const api = androidApi(libRoot)
+  const libDir = path.join(libRoot, api)
+  const include = path.join(sysroot, "usr/include")
+  const archInclude = path.join(include, "aarch64-linux-android")
+
+  return {
+    api,
+    libDir,
+    sysroot,
+    sysInclude: fs.existsSync(archInclude) ? archInclude : include,
+  }
+}
+
+function androidApi(libRoot: string) {
+  const requested = process.env.ANDROID_API_LEVEL ?? process.env.ANDROID_NDK_API ?? "24"
+
+  if (fs.existsSync(path.join(libRoot, requested, "libdl.so"))) {
+    return requested
+  }
+
+  const fallback = fs
+    .readdirSync(libRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => Number(a) - Number(b))
+    .findLast((item) => fs.existsSync(path.join(libRoot, item, "libdl.so")))
+
+  if (!fallback) {
+    throw new Error(`Cannot find Android NDK libraries under ${libRoot}`)
+  }
+
+  return fallback
 }
