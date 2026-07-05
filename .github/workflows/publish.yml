@@ -1,5 +1,5 @@
 name: publish
-run-name: "${{ format('release {0}', inputs.bump) }}"
+run-name: "${{ inputs.target == 'android-arm64' && 'build android artifact' || format('release {0}', inputs.bump) }}"
 
 on:
   push:
@@ -23,8 +23,16 @@ on:
         description: "Override version (optional)"
         required: false
         type: string
+      target:
+        description: "Manual build target"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - android-arm64
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.version || inputs.bump }}
+concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target || 'all' }}-${{ inputs.version || inputs.bump }}
 
 permissions:
   id-token: write
@@ -34,7 +42,7 @@ permissions:
 jobs:
   version:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' && inputs.target != 'android-arm64'
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
@@ -71,7 +79,7 @@ jobs:
   build-cli:
     needs: version
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' && inputs.target != 'android-arm64'
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
@@ -122,6 +130,39 @@ jobs:
 
     outputs:
       version: ${{ needs.version.outputs.version }}
+
+  build-android:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'android-arm64'
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          fetch-tags: true
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.15.2
+
+      - name: Build Android CLI
+        run: ./packages/opencode/script/build.ts --target=android-arm64
+        env:
+          OPENCODE_VERSION: ${{ inputs.version || format('0.0.0-android.{0}', github.run_number) }}
+          OPENCODE_RELEASE: ""
+          GH_REPO: ${{ github.repository }}
+
+      - name: Pack Android artifact
+        working-directory: packages/opencode/dist/opencode-android-arm64/bin
+        run: tar -czf ../../opencode-android-arm64.tar.gz *
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-android-arm64
+          path: |
+            packages/opencode/dist/opencode-android-arm64
+            packages/opencode/dist/opencode-android-arm64.tar.gz
 
   sign-cli-windows:
     needs:

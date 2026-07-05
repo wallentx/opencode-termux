@@ -159,3 +159,7 @@ const table = sqliteTable("session", {
 - Keep delivery vocabulary explicit. Prompts steer by default and promote at the next safe provider-turn boundary while the current drain requires continuation. An explicit `queue` input remains pending until the Session would otherwise become idle; promote one queued input at that boundary, then reevaluate continuation before promoting another. Promoting any new user input resets the selected agent's provider-turn allowance; a batch of steers resets it once.
 - Keep EventV2 replay owner claims separate from clustered Session execution ownership.
 - Keep the System Context algebra, registry, and built-ins in `src/system-context`; keep Context Source producers with their observed domains, and keep Session History selection plus Context Epoch persistence Session-owned.
+
+## Learned Guidance
+- For Termux/Android fixes in source-available projects, prefer building and patching dependencies from source over wrapper or glibc-compatibility approaches.
+- Do not depend on local Bun Android compile support when validating Termux artifacts in this repo; CI owns Android artifact builds, while local checks should focus on syntax, packaging logic, and source-build feasibility.
