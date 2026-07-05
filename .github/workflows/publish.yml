@@ -156,6 +156,15 @@ jobs:
           chmod +x "$RUNNER_TEMP/llvm.sh"
           sudo "$RUNNER_TEMP/llvm.sh" 21
           sudo apt-get install -y --no-install-recommends clang-21 lld-21
+          LLVM_RESOURCE_DIR="$(clang-21 -print-resource-dir)"
+          NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK_CLANG_VERSION="$(ls "$NDK_PREBUILT/lib/clang" | sort -V | tail -n 1)"
+          NDK_RUNTIME_DIR="$NDK_PREBUILT/lib/clang/$NDK_CLANG_VERSION/lib/linux"
+          sudo mkdir -p "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28" "$LLVM_RESOURCE_DIR/lib/linux/aarch64"
+          sudo ln -sf "$NDK_RUNTIME_DIR/libclang_rt.builtins-aarch64-android.a" "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28/libclang_rt.builtins.a"
+          sudo ln -sf "$NDK_RUNTIME_DIR/aarch64/libunwind.a" "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28/libunwind.a"
+          sudo ln -sf "$NDK_RUNTIME_DIR/libclang_rt.builtins-aarch64-android.a" "$LLVM_RESOURCE_DIR/lib/linux/libclang_rt.builtins-aarch64-android.a"
+          sudo ln -sf "$NDK_RUNTIME_DIR/aarch64/libunwind.a" "$LLVM_RESOURCE_DIR/lib/linux/aarch64/libunwind.a"
 
       - name: Build Android Bun runtime with FFI
         run: |
