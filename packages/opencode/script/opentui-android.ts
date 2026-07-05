@@ -60,7 +60,7 @@ if (!fs.existsSync(path.join(src, "packages/core/src/zig/build.zig"))) {
 
 patchOpenTUIBuild(path.join(src, "packages/core/src/zig/build.zig"))
 
-await $`OPENCODE_ANDROID_NDK_LIBDIR=${ndk.libDir} zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseFast --sysroot ${ndk.sysroot} --libc ${libc}`.cwd(
+await $`OPENCODE_ANDROID_NDK_LIBDIR=${ndk.libDir} zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseFast --libc ${libc}`.cwd(
   path.join(src, "packages/core/src/zig"),
 )
 
