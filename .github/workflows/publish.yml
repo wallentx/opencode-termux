@@ -1,5 +1,5 @@
 name: publish
-run-name: "${{ inputs.target == 'android-arm64' && 'build android artifact' || format('release {0}', inputs.bump) }}"
+run-name: "${{ inputs.target == 'android-arm64' && 'build android artifact' || inputs.target == 'android-smoke' && 'build android smoke artifact' || format('release {0}', inputs.bump) }}"
 
 on:
   push:
@@ -31,6 +31,7 @@ on:
         options:
           - all
           - android-arm64
+          - android-smoke
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target || 'all' }}-${{ inputs.version || inputs.bump }}
 
@@ -42,7 +43,7 @@ permissions:
 jobs:
   version:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.repository == 'anomalyco/opencode' && inputs.target != 'android-arm64'
+    if: github.repository == 'anomalyco/opencode' && !contains(fromJSON('["android-arm64","android-smoke"]'), inputs.target)
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
@@ -79,7 +80,7 @@ jobs:
   build-cli:
     needs: version
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.repository == 'anomalyco/opencode' && inputs.target != 'android-arm64'
+    if: github.repository == 'anomalyco/opencode' && !contains(fromJSON('["android-arm64","android-smoke"]'), inputs.target)
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
@@ -163,6 +164,36 @@ jobs:
           path: |
             packages/opencode/dist/opencode-android-arm64
             packages/opencode/dist/opencode-android-arm64.tar.gz
+
+  build-android-smoke:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'android-smoke'
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build Android compile smoke
+        run: |
+          mkdir -p "$RUNNER_TEMP/opencode-android-smoke"
+          cat > "$RUNNER_TEMP/opencode-android-smoke/smoke.ts" <<'EOF'
+          console.log("bun android compile smoke")
+          console.log(process.platform)
+          console.log(process.arch)
+          EOF
+          bun build "$RUNNER_TEMP/opencode-android-smoke/smoke.ts" \
+            --compile \
+            --target=bun-android-arm64 \
+            --outfile="$RUNNER_TEMP/opencode-android-smoke/smoke"
+          file "$RUNNER_TEMP/opencode-android-smoke/smoke" | tee "$RUNNER_TEMP/opencode-android-smoke/file.txt"
+          readelf -l "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-program-headers.txt"
+          readelf -S "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-sections.txt"
+          readelf -d "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-dynamic.txt"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bun-android-compile-smoke
+          path: ${{ runner.temp }}/opencode-android-smoke
 
   sign-cli-windows:
     needs:
