@@ -185,6 +185,7 @@ jobs:
             --compile \
             --target=bun-android-arm64 \
             --outfile="$RUNNER_TEMP/opencode-android-smoke/smoke"
+          bun packages/opencode/script/patch-android-elf.ts "$RUNNER_TEMP/opencode-android-smoke/smoke"
           file "$RUNNER_TEMP/opencode-android-smoke/smoke" | tee "$RUNNER_TEMP/opencode-android-smoke/file.txt"
           readelf -l "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-program-headers.txt"
           readelf -S "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-sections.txt"

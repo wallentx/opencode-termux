@@ -201,6 +201,7 @@ for (const item of targets) {
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: name.replace(pkg.name, "bun") as any,
+      executablePath: item.os === "android" ? process.env.OPENCODE_ANDROID_BUN : undefined,
       outfile: `dist/${name}/bin/opencode`,
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
@@ -218,6 +219,11 @@ for (const item of targets) {
       ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),
     },
   })
+
+  if (item.os === "android") {
+    const androidElf = await import("./patch-android-elf.ts")
+    await androidElf.patchAndroidElf(`dist/${name}/bin/opencode`)
+  }
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
