@@ -41,7 +41,7 @@ export const SIDECAR_BINARIES: Array<{ rustTarget: string; ocBinary: string; ass
   },
   {
     rustTarget: "aarch64-linux-android",
-    ocBinary: "opencode-linux-arm64",
+    ocBinary: "opencode-android-arm64",
     assetExt: "tar.gz",
   },
 ]

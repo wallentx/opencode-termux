@@ -7,7 +7,7 @@ on:
 
 jobs:
   sync:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: write
       pull-requests: write
@@ -21,6 +21,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Setup Git Committer
+        if: github.repository == 'anomalyco/opencode'
         id: setup-git-committer
         uses: ./.github/actions/setup-git-committer
         with:
@@ -31,6 +32,7 @@ jobs:
         run: bun i -g opencode-ai
 
       - name: Sync beta branch
+        if: github.repository == 'anomalyco/opencode'
         env:
           GH_TOKEN: ${{ steps.setup-git-committer.outputs.token }}
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}

@@ -7,7 +7,7 @@ on:
 
 jobs:
   generate:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: write
       pull-requests: write
@@ -19,6 +19,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Setup git committer
+        if: github.repository == 'anomalyco/opencode'
         id: committer
         uses: ./.github/actions/setup-git-committer
         with:

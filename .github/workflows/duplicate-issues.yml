@@ -7,7 +7,7 @@ on:
 jobs:
   check-duplicates:
     if: github.event.action == 'opened'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: read
       issues: write
@@ -41,7 +41,7 @@ jobs:
         run: curl -fsSL https://opencode.ai/install | bash
 
       - name: Check duplicates and compliance
-        if: steps.author.outputs.skip != 'true'
+        if: github.repository == 'anomalyco/opencode' && (steps.author.outputs.skip != 'true')
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -141,7 +141,7 @@ jobs:
 
   recheck-compliance:
     if: github.event.action == 'edited' && contains(github.event.issue.labels.*.name, 'needs:compliance')
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: read
       issues: write
@@ -175,7 +175,7 @@ jobs:
         run: curl -fsSL https://opencode.ai/install | bash
 
       - name: Recheck compliance
-        if: steps.author.outputs.skip != 'true'
+        if: github.repository == 'anomalyco/opencode' && (steps.author.outputs.skip != 'true')
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

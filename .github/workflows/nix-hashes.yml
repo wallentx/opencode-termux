@@ -37,7 +37,7 @@ jobs:
             runner: macos-15-intel
           - system: aarch64-darwin
             runner: macos-latest
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && (matrix.runner) || 'ubuntu-latest' }}
 
     steps:
       - name: Checkout repository

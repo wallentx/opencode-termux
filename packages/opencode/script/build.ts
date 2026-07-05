@@ -51,11 +51,15 @@ const createEmbeddedWebUIBundle = async () => {
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 
 const allTargets: {
-  os: string
+  os: "android" | "darwin" | "linux" | "win32"
   arch: "arm64" | "x64"
   abi?: "musl"
   avx2?: false
 }[] = [
+  {
+    os: "android",
+    arch: "arm64",
+  },
   {
     os: "linux",
     arch: "arm64",
@@ -142,6 +146,9 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
+if (targets.some((item) => item.os === "android")) {
+  await import("./opentui-android.ts")
+}
 for (const item of targets) {
   const name = [
     pkg.name,
@@ -166,7 +173,7 @@ for (const item of targets) {
   const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
 
   await Bun.build({
-    conditions: ["bun", "node"],
+    conditions: item.os === "android" ? ["android", "bun", "node"] : ["bun", "node"],
     tsconfig: "./tsconfig.json",
     plugins: [plugin],
     external: ["node-gyp"],
@@ -231,7 +238,7 @@ for (const item of targets) {
 
 if (Script.release) {
   for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
+    if (key.includes("linux") || key.includes("android")) {
       await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
     } else {
       await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
