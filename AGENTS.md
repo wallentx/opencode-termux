@@ -163,3 +163,4 @@ const table = sqliteTable("session", {
 ## Learned Guidance
 - For Termux/Android fixes in source-available projects, prefer building and patching dependencies from source over wrapper or glibc-compatibility approaches.
 - Do not depend on local Bun Android compile support when validating Termux artifacts in this repo; CI owns Android artifact builds, while local checks should focus on syntax, packaging logic, and source-build feasibility.
+- For Termux forks that need test artifacts, prefer extending an existing build or release workflow with a `workflow_dispatch` target input over creating a duplicate workflow. Pair the CI input with a build-script target selector so on-demand runs build and upload only the requested artifact, such as `android-arm64`.
