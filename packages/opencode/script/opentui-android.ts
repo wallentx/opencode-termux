@@ -58,7 +58,9 @@ if (!fs.existsSync(path.join(src, "packages/core/src/zig/build.zig"))) {
   await $`git checkout --detach FETCH_HEAD`.cwd(src)
 }
 
-await $`zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseFast --sysroot ${ndk.sysroot} --libc ${libc} --search-prefix ${ndk.libDir}`.cwd(
+patchOpenTUIBuild(path.join(src, "packages/core/src/zig/build.zig"))
+
+await $`OPENCODE_ANDROID_NDK_LIBDIR=${ndk.libDir} zig build -Dtarget=aarch64-linux-android -Doptimize=ReleaseFast --sysroot ${ndk.sysroot} --libc ${libc}`.cwd(
   path.join(src, "packages/core/src/zig"),
 )
 
@@ -226,4 +228,33 @@ function androidApi(libRoot: string) {
   }
 
   return fallback
+}
+
+function patchOpenTUIBuild(file: string) {
+  const marker = "OPENCODE_ANDROID_NDK_LIBDIR"
+  const text = fs.readFileSync(file, "utf8")
+
+  if (text.includes(marker)) return
+
+  const before = `        .linux => {
+            artifact.linkSystemLibrary("dl");
+            artifact.linkSystemLibrary("pthread");
+        },`
+  const after = `        .linux => {
+            if (target.result.abi == .android) {
+                if (b.graph.env_map.get("${marker}")) |lib_path| {
+                    artifact.addLibraryPath(.{ .cwd_relative = lib_path });
+                }
+                artifact.linkSystemLibrary("dl");
+            } else {
+                artifact.linkSystemLibrary("dl");
+                artifact.linkSystemLibrary("pthread");
+            }
+        },`
+
+  if (!text.includes(before)) {
+    throw new Error("Cannot patch OpenTUI Android system library handling")
+  }
+
+  fs.writeFileSync(file, text.replace(before, after))
 }
