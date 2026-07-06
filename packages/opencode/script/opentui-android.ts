@@ -129,7 +129,9 @@ if (fs.existsSync(license)) {
   fs.copyFileSync(license, path.join(native, "LICENSE"))
 }
 
-const block = `  if (process.platform === "android") {
+const marker = "@opentui/core-android-arm64"
+const block = `  // ${marker}
+  if (process.platform === "android") {
     if (process.arch === "arm64") return await import("./android-arm64/index.bun.js")
   }
 
@@ -142,7 +144,7 @@ for (const file of fs.readdirSync(core)) {
   const target = path.join(core, file)
   const text = fs.readFileSync(target, "utf8")
 
-  if (text.includes(name)) continue
+  if (text.includes(marker) || text.includes('process.platform === "android"')) continue
   if (!text.includes('@opentui/core-linux-arm64')) continue
 
   const next = text.replace('  if (process.platform === "linux") {\n', block + '  if (process.platform === "linux") {\n')
