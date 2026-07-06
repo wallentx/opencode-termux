@@ -1,0 +1,86 @@
+name: termux-release-checkpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: "Release branch to checkpoint from"
+        required: true
+        type: string
+      source_sha:
+        description: "Release branch SHA; defaults to source branch head"
+        required: false
+        type: string
+        default: ""
+      destination_branch:
+        description: "Reusable Termux patch branch"
+        required: false
+        type: string
+        default: "termux-target"
+      reviewer:
+        description: "GitHub username to request as reviewer"
+        required: false
+        type: string
+        default: "wallentx"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: termux-release-checkpoint-${{ inputs.source_branch }}-${{ inputs.destination_branch }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -n "${APP_TOKEN}" ]]; then
+            echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          echo "::warning::GitHub App token unavailable; falling back to GITHUB_TOKEN."
+          echo "GH_TOKEN=${FALLBACK_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Checkout destination branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.destination_branch }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: Validate GitHub CLI environment
+        run: bash scripts/termux-validate-gh-env.sh
+
+      - name: Configure git
+        run: bash scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
+
+      - name: Create checkpoint PR
+        env:
+          REQUESTED_SOURCE_BRANCH: ${{ inputs.source_branch }}
+          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
+          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
+          REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
+        run: bash scripts/termux-create-checkpoint-pr.sh
