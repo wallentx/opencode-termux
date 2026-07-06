@@ -141,7 +141,7 @@
     },
     "packages/codemode": {
       "name": "@opencode-ai/codemode",
-      "version": "0.0.1",
+      "version": "1.17.13",
       "dependencies": {
         "acorn": "8.15.0",
         "effect": "catalog:",
