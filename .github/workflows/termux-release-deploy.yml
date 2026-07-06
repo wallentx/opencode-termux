@@ -29,7 +29,7 @@ on:
         description: "Reusable Termux patch branch to checkpoint into"
         required: false
         type: string
-        default: "termux"
+        default: "termux-target"
       reviewer:
         description: "GitHub username to request on checkpoint PR"
         required: false
@@ -152,6 +152,6 @@ jobs:
         env:
           SOURCE_BRANCH: ${{ steps.release-ref.outputs.branch }}
           SOURCE_SHA: ${{ steps.release-ref.outputs.sha }}
-          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux' }}
+          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
           REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
         run: bash scripts/termux-create-checkpoint-pr.sh

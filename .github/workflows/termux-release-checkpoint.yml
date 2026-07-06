@@ -16,7 +16,7 @@ on:
         description: "Reusable Termux patch branch"
         required: false
         type: string
-        default: "termux"
+        default: "termux-target"
       reviewer:
         description: "GitHub username to request as reviewer"
         required: false
@@ -75,12 +75,12 @@ jobs:
         run: bash scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
         env:
           SOURCE_BRANCH: ${{ inputs.source_branch }}
-          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux' }}
+          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
 
       - name: Create checkpoint PR
         env:
           REQUESTED_SOURCE_BRANCH: ${{ inputs.source_branch }}
           REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
-          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux' }}
+          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
           REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
         run: bash scripts/termux-create-checkpoint-pr.sh

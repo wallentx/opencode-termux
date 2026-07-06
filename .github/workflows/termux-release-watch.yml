@@ -14,7 +14,7 @@ on:
         description: "Branch carrying reusable Termux fixes"
         required: false
         type: string
-        default: "termux"
+        default: "termux-target"
       reviewer:
         description: "GitHub username to request as reviewer"
         required: false
@@ -104,7 +104,7 @@ jobs:
     env:
       REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
       UPSTREAM_REPO: anomalyco/opencode
-      PATCH_BRANCH: ${{ inputs.patch_branch || 'termux' }}
+      PATCH_BRANCH: ${{ inputs.patch_branch || 'termux-target' }}
     steps:
       - name: Generate GitHub App token
         id: app-token
