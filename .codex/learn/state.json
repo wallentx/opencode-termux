@@ -1,5 +1,30 @@
 {
   "applied_items": {
+    "L-1bdd95fceafb": {
+      "applied_at": "2026-07-06T03:07:52+00:00",
+      "hash": "1bdd95fceafbc977e3f6c23b8a0dcbd3473781bfb75cec01c5a711efde1989e1",
+      "target_path": ".codex/learn/repository-notes.md"
+    },
+    "L-2aad813030c6": {
+      "applied_at": "2026-07-06T03:07:52+00:00",
+      "hash": "2aad813030c600d3975e04dda46d71798bfdcea30cba96568d4a623b1aff4c4d",
+      "target_path": "AGENTS.md"
+    },
+    "L-4a593459d724": {
+      "applied_at": "2026-07-06T03:07:52+00:00",
+      "hash": "4a593459d724681497124f4acb44b5ff2fb0c38f897387bfd4a9fc7882bc25a7",
+      "target_path": "AGENTS.md"
+    },
+    "L-980eb3daef23": {
+      "applied_at": "2026-07-06T03:07:52+00:00",
+      "hash": "980eb3daef237313acf47a5db2d195c2202841a8bafc8b85a3d716f056c3c5f5",
+      "target_path": ".codex/learn/repository-notes.md"
+    },
+    "L-dc802ad884d9": {
+      "applied_at": "2026-07-06T03:07:52+00:00",
+      "hash": "dc802ad884d9ad9234ab4ac953db3b932d99d05b691cbeabdbc81296af81dd0c",
+      "target_path": ".codex/skills/opencode-termux-branch-maintenance/SKILL.md"
+    },
     "L-termux-ci-dispatch": {
       "applied_at": "2026-07-05T18:06:03+00:00",
       "hash": "a710ad21280fb01c840b7d98f4aaef82196dd39e63beca125271f20b4e0ecbc1",
@@ -38,11 +63,29 @@
   },
   "ignored_patterns": {},
   "processed_item_hashes": {
+    "1bdd95fceafbc977e3f6c23b8a0dcbd3473781bfb75cec01c5a711efde1989e1": {
+      "item_id": "L-1bdd95fceafb",
+      "kind": "Repository Note",
+      "processed_at": "2026-07-06T03:07:52+00:00",
+      "target_path": ".codex/learn/repository-notes.md"
+    },
+    "2aad813030c600d3975e04dda46d71798bfdcea30cba96568d4a623b1aff4c4d": {
+      "item_id": "L-2aad813030c6",
+      "kind": "Rule",
+      "processed_at": "2026-07-06T03:07:52+00:00",
+      "target_path": "AGENTS.md"
+    },
     "3fb7b06a4c27b2a160bd27788153e16097db2cbc5360cfbcccbf594685d440d0": {
       "item_id": "opencode-termux-diverged-branch-recovery",
       "kind": "Skill",
       "processed_at": "2026-07-05T07:22:12+00:00",
       "target_path": ".codex/skills/opencode-termux-diverged-branch-recovery/SKILL.md"
+    },
+    "4a593459d724681497124f4acb44b5ff2fb0c38f897387bfd4a9fc7882bc25a7": {
+      "item_id": "L-4a593459d724",
+      "kind": "Rule",
+      "processed_at": "2026-07-06T03:07:52+00:00",
+      "target_path": "AGENTS.md"
     },
     "4c062d485f90b0b193ea45f6fcb3ef659957ce0b20e85e64ddbeae2594c1f307": {
       "item_id": "opencode-termux-ci-builds",
@@ -68,11 +111,23 @@
       "processed_at": "2026-07-05T07:22:12+00:00",
       "target_path": "AGENTS.md"
     },
+    "980eb3daef237313acf47a5db2d195c2202841a8bafc8b85a3d716f056c3c5f5": {
+      "item_id": "L-980eb3daef23",
+      "kind": "Repository Note",
+      "processed_at": "2026-07-06T03:07:52+00:00",
+      "target_path": ".codex/learn/repository-notes.md"
+    },
     "a080363ceb102af8fb05739d69a2e31463f31ff965c6bfde298c06df2852d210": {
       "item_id": "opencode-opentui-android-native",
       "kind": "Repository Note",
       "processed_at": "2026-07-05T07:22:12+00:00",
       "target_path": ".codex/learn/repository-notes.md"
+    },
+    "dc802ad884d9ad9234ab4ac953db3b932d99d05b691cbeabdbc81296af81dd0c": {
+      "item_id": "L-dc802ad884d9",
+      "kind": "Skill",
+      "processed_at": "2026-07-06T03:07:52+00:00",
+      "target_path": ".codex/skills/opencode-termux-branch-maintenance/SKILL.md"
     }
   },
   "processed_sessions": {},

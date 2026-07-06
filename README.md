@@ -43,6 +43,9 @@
 
 ---
 
+> [!NOTE]
+> This fork is maintained for Termux/Android compatibility. Fork-specific automation lives on `dev`, while the reusable compatibility patch stack is kept on `termux-target`.
+
 ### Installation
 
 ```bash
