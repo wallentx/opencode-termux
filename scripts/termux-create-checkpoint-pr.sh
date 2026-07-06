@@ -20,6 +20,7 @@ fi
 if [[ -z "${source_sha}" ]]; then
   source_sha="$(git rev-parse "origin/${source_branch}")"
 fi
+rm -rf "${PROMOTED_DIR:-promoted}"
 
 short_sha="${source_sha:0:12}"
 checkpoint_branch="checkpoint-${short_sha}"
