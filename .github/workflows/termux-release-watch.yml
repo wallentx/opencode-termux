@@ -1,0 +1,164 @@
+name: termux-release-watch
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: "Specific upstream tag to process, for example v1.17.13"
+        required: false
+        type: string
+        default: ""
+      patch_branch:
+        description: "Branch carrying reusable Termux fixes"
+        required: false
+        type: string
+        default: "termux"
+      reviewer:
+        description: "GitHub username to request as reviewer"
+        required: false
+        type: string
+        default: "wallentx"
+      bypass_prior_release_train:
+        description: "Allow workflow_dispatch to update a train while another Termux release PR is open"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: termux-release-watch
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  look-for-newer-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      selected: ${{ steps.upstream.outputs.selected }}
+      upstream_tag: ${{ steps.upstream.outputs.upstream_tag }}
+      upstream_name: ${{ steps.upstream.outputs.upstream_name }}
+      upstream_html_url: ${{ steps.upstream.outputs.upstream_html_url }}
+      upstream_prerelease: ${{ steps.upstream.outputs.upstream_prerelease }}
+      upstream_target: ${{ steps.upstream.outputs.upstream_target }}
+      upstream_id: ${{ steps.upstream.outputs.upstream_id }}
+      release_train: ${{ steps.upstream.outputs.release_train }}
+      release_branch: ${{ steps.upstream.outputs.release_branch }}
+      work_branch: ${{ steps.upstream.outputs.work_branch }}
+      termux_tag: ${{ steps.upstream.outputs.termux_tag }}
+      body: ${{ steps.upstream.outputs.body }}
+    env:
+      UPSTREAM_REPO: anomalyco/opencode
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -n "${APP_TOKEN}" ]]; then
+            echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          echo "::warning::GitHub App token unavailable; falling back to GITHUB_TOKEN."
+          echo "GH_TOKEN=${FALLBACK_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Checkout automation branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: Validate GitHub CLI environment
+        run: bash scripts/termux-validate-gh-env.sh
+
+      - name: Select upstream release
+        id: upstream
+        env:
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+          BYPASS_PRIOR_RELEASE_TRAIN: ${{ inputs.bypass_prior_release_train || false }}
+        run: bash scripts/termux-select-release.sh
+
+  create-release-pr:
+    needs: look-for-newer-release
+    if: needs.look-for-newer-release.outputs.selected == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
+      UPSTREAM_REPO: anomalyco/opencode
+      PATCH_BRANCH: ${{ inputs.patch_branch || 'termux' }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -n "${APP_TOKEN}" ]]; then
+            echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          echo "::warning::GitHub App token unavailable; falling back to GITHUB_TOKEN."
+          echo "GH_TOKEN=${FALLBACK_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Checkout automation branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Validate GitHub CLI environment
+        run: bash scripts/termux-validate-gh-env.sh
+
+      - name: Configure git
+        env:
+          UPSTREAM_TAG: ${{ needs.look-for-newer-release.outputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+          bash scripts/termux-configure-git.sh \
+            --origin "${PATCH_BRANCH}" \
+            --upstream-tag "${UPSTREAM_REPO}" "${UPSTREAM_TAG}"
+
+      - name: Create or update release train PR
+        id: pr
+        env:
+          UPSTREAM_TAG: ${{ needs.look-for-newer-release.outputs.upstream_tag }}
+          UPSTREAM_NAME: ${{ needs.look-for-newer-release.outputs.upstream_name }}
+          UPSTREAM_HTML_URL: ${{ needs.look-for-newer-release.outputs.upstream_html_url }}
+          UPSTREAM_PRERELEASE: ${{ needs.look-for-newer-release.outputs.upstream_prerelease }}
+          UPSTREAM_TARGET: ${{ needs.look-for-newer-release.outputs.upstream_target }}
+          UPSTREAM_ID: ${{ needs.look-for-newer-release.outputs.upstream_id }}
+          RELEASE_TRAIN: ${{ needs.look-for-newer-release.outputs.release_train }}
+          RELEASE_BRANCH: ${{ needs.look-for-newer-release.outputs.release_branch }}
+          WORK_BRANCH: ${{ needs.look-for-newer-release.outputs.work_branch }}
+          TERMUX_TAG: ${{ needs.look-for-newer-release.outputs.termux_tag }}
+          UPSTREAM_BODY: ${{ needs.look-for-newer-release.outputs.body }}
+        run: bash scripts/termux-create-release-pr.sh
