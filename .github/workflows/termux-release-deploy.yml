@@ -1,0 +1,149 @@
+name: termux-release-deploy
+
+on:
+  push:
+    branches:
+      - "release-*"
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Release branch to deploy, for example release-1.17.13"
+        required: true
+        type: string
+      release_sha:
+        description: "Release branch SHA to deploy; defaults to current branch head"
+        required: false
+        type: string
+        default: ""
+      pr_number:
+        description: "Merged release PR number, optional with pr_head_sha"
+        required: false
+        type: string
+        default: ""
+      pr_head_sha:
+        description: "Merged release PR head SHA, optional with pr_number"
+        required: false
+        type: string
+        default: ""
+      destination_branch:
+        description: "Reusable Termux patch branch to checkpoint into"
+        required: false
+        type: string
+        default: "termux"
+      reviewer:
+        description: "GitHub username to request on checkpoint PR"
+        required: false
+        type: string
+        default: "wallentx"
+
+permissions:
+  actions: write
+  contents: write
+  deployments: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: termux-release-deploy-${{ inputs.release_branch || github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub App token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Checkout release branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_branch || github.ref_name }}
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Validate GitHub CLI environment
+        run: bash scripts/termux-validate-gh-env.sh
+
+      - name: Configure git
+        run: bash scripts/termux-configure-git.sh
+
+      - name: Resolve release ref
+        id: release-ref
+        env:
+          INPUT_RELEASE_BRANCH: ${{ inputs.release_branch }}
+          INPUT_RELEASE_SHA: ${{ inputs.release_sha }}
+        run: bash scripts/termux-resolve-release-ref.sh
+
+      - name: Read release metadata
+        id: metadata
+        run: bash scripts/termux-read-release-metadata.sh
+
+      - name: Find merged release PR
+        id: pr
+        if: steps.metadata.outputs.deploy == 'true'
+        env:
+          RELEASE_BRANCH: ${{ steps.release-ref.outputs.branch }}
+          RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          INPUT_PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
+        run: bash scripts/termux-find-release-pr.sh
+
+      - name: Build Android artifact through publish workflow
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        env:
+          RELEASE_BRANCH: ${{ steps.release-ref.outputs.branch }}
+          RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
+          TERMUX_TAG: ${{ steps.metadata.outputs.termux_tag }}
+        run: bash scripts/termux-dispatch-android-build.sh
+
+      - name: Download existing Android artifact if release needs repair
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p promoted
+          gh release download "${TERMUX_TAG}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern opencode-android-arm64.tar.gz \
+            --dir promoted \
+            --clobber
+        env:
+          TERMUX_TAG: ${{ steps.metadata.outputs.termux_tag }}
+
+      - name: Create or repair mirrored release
+        if: steps.metadata.outputs.deploy == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.metadata.outputs.upstream_tag }}
+          UPSTREAM_REPO: ${{ steps.metadata.outputs.upstream_repo }}
+          UPSTREAM_NAME: ${{ steps.metadata.outputs.upstream_name }}
+          TERMUX_TAG: ${{ steps.metadata.outputs.termux_tag }}
+          UPSTREAM_PRERELEASE: ${{ steps.metadata.outputs.upstream_prerelease }}
+          UPSTREAM_HTML_URL: ${{ steps.metadata.outputs.upstream_html_url }}
+          RELEASE_TRAIN: ${{ steps.metadata.outputs.release_train }}
+          RELEASE_EXISTS: ${{ steps.metadata.outputs.release_exists }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
+        run: bash scripts/termux-create-or-update-mirrored-release.sh
+
+      - name: Open checkpoint PR
+        if: steps.metadata.outputs.deploy == 'true'
+        env:
+          SOURCE_BRANCH: ${{ steps.release-ref.outputs.branch }}
+          SOURCE_SHA: ${{ steps.release-ref.outputs.sha }}
+          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux' }}
+          REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
+        run: bash scripts/termux-create-checkpoint-pr.sh
