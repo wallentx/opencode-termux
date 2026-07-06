@@ -94,8 +94,8 @@ version_is_newer() {
   [[ "${newest}" == "${candidate_version}" && "${candidate_version}" != "${current_version}" ]]
 }
 
-latest_mirrored_termux_tag_for_train() {
-  local release_train="$1"
+latest_mirrored_termux_tag() {
+  local release_train="${1:-}"
   local newest_tag=""
   local tag
   local tag_train
@@ -103,8 +103,10 @@ latest_mirrored_termux_tag_for_train() {
   while IFS= read -r tag; do
     [[ -n "${tag}" ]] || continue
     [[ "${tag}" == v*-termux ]] || continue
-    tag_train="$(release_train_for_tag "${tag}")"
-    [[ "${tag_train}" == "${release_train}" ]] || continue
+    if [[ -n "${release_train}" ]]; then
+      tag_train="$(release_train_for_tag "${tag}")"
+      [[ "${tag_train}" == "${release_train}" ]] || continue
+    fi
     if [[ -z "${newest_tag}" ]] || version_is_newer "${tag}" "${newest_tag}"; then
       newest_tag="${tag}"
     fi
@@ -118,6 +120,10 @@ latest_mirrored_termux_tag_for_train() {
   )
 
   printf '%s\n' "${newest_tag}"
+}
+
+latest_mirrored_termux_tag_for_train() {
+  latest_mirrored_termux_tag "$1"
 }
 
 open_release_train_pr_for_branch() {
@@ -272,6 +278,12 @@ maybe_select_release() {
   current_tag="$(release_branch_current_tag "${release_branch}")"
   if ! version_is_newer "${upstream_tag}" "${current_tag}"; then
     echo "${upstream_tag} is not newer than ${current_tag} already recorded on ${release_branch}; nothing to do."
+    return 1
+  fi
+
+  mirrored_tag="$(latest_mirrored_termux_tag)"
+  if ! version_is_newer "${upstream_tag}" "${mirrored_tag}"; then
+    echo "${upstream_tag} is not newer than ${mirrored_tag} already mirrored; nothing to do."
     return 1
   fi
 
