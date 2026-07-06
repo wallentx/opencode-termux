@@ -1,0 +1,80 @@
+{
+  "applied_items": {
+    "L-termux-ci-dispatch": {
+      "applied_at": "2026-07-05T18:06:03+00:00",
+      "hash": "a710ad21280fb01c840b7d98f4aaef82196dd39e63beca125271f20b4e0ecbc1",
+      "target_path": "AGENTS.md"
+    },
+    "opencode-opentui-android-native": {
+      "applied_at": "2026-07-05T07:22:12+00:00",
+      "hash": "a080363ceb102af8fb05739d69a2e31463f31ff965c6bfde298c06df2852d210",
+      "target_path": ".codex/learn/repository-notes.md"
+    },
+    "opencode-termux-ci-builds": {
+      "applied_at": "2026-07-05T07:22:12+00:00",
+      "hash": "4c062d485f90b0b193ea45f6fcb3ef659957ce0b20e85e64ddbeae2594c1f307",
+      "target_path": "AGENTS.md"
+    },
+    "opencode-termux-diverged-branch-recovery": {
+      "applied_at": "2026-07-05T07:22:12+00:00",
+      "hash": "3fb7b06a4c27b2a160bd27788153e16097db2cbc5360cfbcccbf594685d440d0",
+      "target_path": ".codex/skills/opencode-termux-diverged-branch-recovery/SKILL.md"
+    },
+    "opencode-termux-native-dependency-audit": {
+      "applied_at": "2026-07-05T07:22:12+00:00",
+      "hash": "573401f294c9d4d6fa32e5f18bf7607318c889216b1c788e4ea3202d2b8455a6",
+      "target_path": ".codex/skills/opencode-termux-native-dependency-audit/SKILL.md"
+    },
+    "opencode-termux-source-first": {
+      "applied_at": "2026-07-05T07:22:12+00:00",
+      "hash": "77ada574efe5bf3a768a33792e197aa41312a3c6362e18013fd60b1d3b8adce6",
+      "target_path": "AGENTS.md"
+    },
+    "opencode-tsgo-termux-source-build": {
+      "applied_at": "2026-07-05T07:22:12+00:00",
+      "hash": "6376b0b57368d96ed2a140e94e29ed1aefd05a261cceb719d86966d28f894634",
+      "target_path": ".codex/learn/repository-notes.md"
+    }
+  },
+  "ignored_patterns": {},
+  "processed_item_hashes": {
+    "3fb7b06a4c27b2a160bd27788153e16097db2cbc5360cfbcccbf594685d440d0": {
+      "item_id": "opencode-termux-diverged-branch-recovery",
+      "kind": "Skill",
+      "processed_at": "2026-07-05T07:22:12+00:00",
+      "target_path": ".codex/skills/opencode-termux-diverged-branch-recovery/SKILL.md"
+    },
+    "4c062d485f90b0b193ea45f6fcb3ef659957ce0b20e85e64ddbeae2594c1f307": {
+      "item_id": "opencode-termux-ci-builds",
+      "kind": "Rule",
+      "processed_at": "2026-07-05T07:22:12+00:00",
+      "target_path": "AGENTS.md"
+    },
+    "573401f294c9d4d6fa32e5f18bf7607318c889216b1c788e4ea3202d2b8455a6": {
+      "item_id": "opencode-termux-native-dependency-audit",
+      "kind": "Skill",
+      "processed_at": "2026-07-05T07:22:12+00:00",
+      "target_path": ".codex/skills/opencode-termux-native-dependency-audit/SKILL.md"
+    },
+    "6376b0b57368d96ed2a140e94e29ed1aefd05a261cceb719d86966d28f894634": {
+      "item_id": "opencode-tsgo-termux-source-build",
+      "kind": "Repository Note",
+      "processed_at": "2026-07-05T07:22:12+00:00",
+      "target_path": ".codex/learn/repository-notes.md"
+    },
+    "77ada574efe5bf3a768a33792e197aa41312a3c6362e18013fd60b1d3b8adce6": {
+      "item_id": "opencode-termux-source-first",
+      "kind": "Rule",
+      "processed_at": "2026-07-05T07:22:12+00:00",
+      "target_path": "AGENTS.md"
+    },
+    "a080363ceb102af8fb05739d69a2e31463f31ff965c6bfde298c06df2852d210": {
+      "item_id": "opencode-opentui-android-native",
+      "kind": "Repository Note",
+      "processed_at": "2026-07-05T07:22:12+00:00",
+      "target_path": ".codex/learn/repository-notes.md"
+    }
+  },
+  "processed_sessions": {},
+  "version": 1
+}
