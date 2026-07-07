@@ -23,6 +23,7 @@ const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+const targetFlag = process.argv.find((item) => item.startsWith("--target="))?.slice("--target=".length)
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -51,11 +52,15 @@ const createEmbeddedWebUIBundle = async () => {
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 
 const allTargets: {
-  os: string
+  os: "android" | "darwin" | "linux" | "win32"
   arch: "arm64" | "x64"
   abi?: "musl"
   avx2?: false
 }[] = [
+  {
+    os: "android",
+    arch: "arm64",
+  },
   {
     os: "linux",
     arch: "arm64",
@@ -113,6 +118,19 @@ const allTargets: {
   },
 ]
 
+function targetName(item: (typeof allTargets)[number]) {
+  return [
+    pkg.name,
+    // changing to win32 flags npm for some reason
+    item.os === "win32" ? "windows" : item.os,
+    item.arch,
+    item.avx2 === false ? "baseline" : undefined,
+    item.abi === undefined ? undefined : item.abi,
+  ]
+    .filter(Boolean)
+    .join("-")
+}
+
 const targets = singleFlag
   ? allTargets.filter((item) => {
       if (item.os !== process.platform || item.arch !== process.arch) {
@@ -132,7 +150,16 @@ const targets = singleFlag
 
       return true
     })
+  : targetFlag
+    ? allTargets.filter((item) => {
+        const name = targetName(item)
+        return targetFlag === name || targetFlag === name.replace(`${pkg.name}-`, "")
+      })
   : allTargets
+
+if (targetFlag && targets.length === 0) {
+  throw new Error(`Unknown build target: ${targetFlag}`)
+}
 
 await $`rm -rf dist`
 
@@ -142,17 +169,11 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
+if (targets.some((item) => item.os === "android")) {
+  await import("./opentui-android.ts")
+}
 for (const item of targets) {
-  const name = [
-    pkg.name,
-    // changing to win32 flags npm for some reason
-    item.os === "win32" ? "windows" : item.os,
-    item.arch,
-    item.avx2 === false ? "baseline" : undefined,
-    item.abi === undefined ? undefined : item.abi,
-  ]
-    .filter(Boolean)
-    .join("-")
+  const name = targetName(item)
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 
@@ -166,7 +187,7 @@ for (const item of targets) {
   const workerRelativePath = path.relative(dir, parserWorker).replaceAll("\\", "/")
 
   await Bun.build({
-    conditions: ["bun", "node"],
+    conditions: item.os === "android" ? ["android", "bun", "node"] : ["bun", "node"],
     tsconfig: "./tsconfig.json",
     plugins: [plugin],
     external: ["node-gyp"],
@@ -180,6 +201,7 @@ for (const item of targets) {
       autoloadTsconfig: true,
       autoloadPackageJson: true,
       target: name.replace(pkg.name, "bun") as any,
+      executablePath: item.os === "android" ? process.env.OPENCODE_ANDROID_BUN : undefined,
       outfile: `dist/${name}/bin/opencode`,
       execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
       windows: {},
@@ -197,6 +219,11 @@ for (const item of targets) {
       ...(item.os === "linux" ? { "process.env.OPENTUI_LIBC": JSON.stringify(item.abi ?? "glibc") } : {}),
     },
   })
+
+  if (item.os === "android") {
+    const androidElf = await import("./patch-android-elf.ts")
+    await androidElf.patchAndroidElf(`dist/${name}/bin/opencode`)
+  }
 
   // Smoke test: only run if binary is for current platform
   if (item.os === process.platform && item.arch === process.arch && !item.abi) {
@@ -231,7 +258,7 @@ for (const item of targets) {
 
 if (Script.release) {
   for (const key of Object.keys(binaries)) {
-    if (key.includes("linux")) {
+    if (key.includes("linux") || key.includes("android")) {
       await $`tar -czf ../../${key}.tar.gz *`.cwd(`dist/${key}/bin`)
     } else {
       await $`zip -r ../../${key}.zip *`.cwd(`dist/${key}/bin`)
