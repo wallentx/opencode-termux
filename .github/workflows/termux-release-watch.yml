@@ -55,6 +55,7 @@ defaults:
 
 jobs:
   look-for-newer-release:
+    if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -118,7 +119,7 @@ jobs:
 
   create-release-pr:
     needs: look-for-newer-release
-    if: needs.look-for-newer-release.outputs.selected == 'true'
+    if: github.repository == 'wallentx/opencode-termux' && needs.look-for-newer-release.outputs.selected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:

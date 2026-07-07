@@ -65,6 +65,7 @@ defaults:
 
 jobs:
   deploy:
+    if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     steps:
@@ -129,13 +130,37 @@ jobs:
           INPUT_PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
         run: bash scripts/termux-find-release-pr.sh
 
-      - name: Build Android artifact through publish workflow
+      - name: Create Android build deployment
+        id: android-deployment
         if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
         env:
           RELEASE_BRANCH: ${{ steps.release-ref.outputs.branch }}
           RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
           TERMUX_TAG: ${{ steps.metadata.outputs.termux_tag }}
-        run: bash scripts/termux-dispatch-android-build.sh
+        run: bash scripts/termux-create-android-build-deployment.sh
+
+      - name: Build Android artifact
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        uses: ./.github/actions/build-android-cli
+        with:
+          version: ${{ steps.metadata.outputs.build_version }}
+          release: ""
+          repo: ${{ github.repository }}
+
+      - name: Promote built Android artifact
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p promoted
+          cp packages/opencode/dist/opencode-android-arm64.tar.gz promoted/
+          sha256sum promoted/opencode-android-arm64.tar.gz
+
+      - name: Finish Android build deployment
+        if: always() && steps.android-deployment.outputs.deployment_id != ''
+        env:
+          DEPLOYMENT_ID: ${{ steps.android-deployment.outputs.deployment_id }}
+          BUILD_RESULT: ${{ job.status }}
+        run: bash scripts/termux-finish-android-build-deployment.sh
 
       - name: Download existing Android artifact if release needs repair
         if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists == 'true'

@@ -36,9 +36,23 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target || 'all' }}-${{ inputs.version || inputs.bump }}
 
 permissions:
+  actions: read
+  artifact-metadata: read
+  attestations: read
+  checks: read
+  code-quality: read
   id-token: write
   contents: write
+  deployments: read
+  discussions: read
+  issues: read
+  models: read
   packages: write
+  pages: read
+  pull-requests: read
+  security-events: read
+  statuses: read
+  vulnerability-alerts: read
 
 jobs:
   version:
@@ -141,61 +155,19 @@ jobs:
         with:
           fetch-tags: true
 
-      - uses: ./.github/actions/setup-bun
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          version: 0.15.2
-
-      - name: Install Bun build toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends wget gnupg software-properties-common ninja-build cmake
-          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-          chmod +x "$RUNNER_TEMP/llvm.sh"
-          sudo "$RUNNER_TEMP/llvm.sh" 21
-          sudo apt-get install -y --no-install-recommends clang-21 lld-21
-          LLVM_RESOURCE_DIR="$(clang-21 -print-resource-dir)"
-          NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
-          NDK_CLANG_VERSION="$(ls "$NDK_PREBUILT/lib/clang" | sort -V | tail -n 1)"
-          NDK_RUNTIME_DIR="$NDK_PREBUILT/lib/clang/$NDK_CLANG_VERSION/lib/linux"
-          sudo mkdir -p "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28" "$LLVM_RESOURCE_DIR/lib/linux/aarch64"
-          sudo ln -sf "$NDK_RUNTIME_DIR/libclang_rt.builtins-aarch64-android.a" "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28/libclang_rt.builtins.a"
-          sudo ln -sf "$NDK_RUNTIME_DIR/aarch64/libunwind.a" "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28/libunwind.a"
-          sudo ln -sf "$NDK_RUNTIME_DIR/libclang_rt.builtins-aarch64-android.a" "$LLVM_RESOURCE_DIR/lib/linux/libclang_rt.builtins-aarch64-android.a"
-          sudo ln -sf "$NDK_RUNTIME_DIR/aarch64/libunwind.a" "$LLVM_RESOURCE_DIR/lib/linux/aarch64/libunwind.a"
-
-      - name: Build Android Bun runtime with FFI
-        run: |
-          export CC=clang-21
-          export CXX=clang++-21
-          export LD=ld.lld-21
-          NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
-          mkdir -p "$RUNNER_TEMP/android-toolchain-bin"
-          ln -sf "$NDK_PREBUILT/bin/llvm-strip" "$RUNNER_TEMP/android-toolchain-bin/strip"
-          export PATH="$RUNNER_TEMP/android-toolchain-bin:$PATH"
-          BUN_VERSION="$(node -p "require('./package.json').packageManager.split('@')[1]")"
-          BUN_SOURCE="$RUNNER_TEMP/bun-src"
-          git clone --depth=1 --branch "bun-v${BUN_VERSION}" https://github.com/oven-sh/bun.git "$BUN_SOURCE"
-          BUN_BUILD="$BUN_SOURCE/build/android-ffi"
-          cd "$BUN_SOURCE"
-          bun install --frozen-lockfile
-          bun scripts/build.ts --profile=android-release --tinycc=on --build-dir="$BUN_BUILD" --target=bun -j"$(nproc)"
-          test -x "$BUN_BUILD/bun"
-          file "$BUN_BUILD/bun"
-          echo "OPENCODE_ANDROID_BUN=$BUN_BUILD/bun" >> "$GITHUB_ENV"
+          checkout: false
 
       - name: Build Android CLI
-        run: ./packages/opencode/script/build.ts --target=android-arm64
-        env:
-          OPENCODE_VERSION: ${{ inputs.version || format('0.0.0-android.{0}', github.run_number) }}
-          OPENCODE_RELEASE: ""
-          GH_REPO: ${{ github.repository }}
-
-      - name: Pack Android artifact
-        working-directory: packages/opencode/dist/opencode-android-arm64/bin
-        run: tar -czf ../../opencode-android-arm64.tar.gz *
+        uses: ./.github/actions/build-android-cli
+        with:
+          version: ${{ inputs.version || format('0.0.0-android.{0}', github.run_number) }}
+          release: ""
+          repo: ${{ github.repository }}
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -203,12 +175,20 @@ jobs:
           path: |
             packages/opencode/dist/opencode-android-arm64
             packages/opencode/dist/opencode-android-arm64.tar.gz
+            packages/opencode/dist/android-smoke
 
   build-android-smoke:
     runs-on: ubuntu-24.04
     if: github.event_name == 'workflow_dispatch' && inputs.target == 'android-smoke'
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
 
       - uses: ./.github/actions/setup-bun
 

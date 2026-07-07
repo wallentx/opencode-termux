@@ -44,6 +44,7 @@ fi
   echo "upstream_tag=${upstream_tag}"
   echo "upstream_name=${upstream_name}"
   echo "termux_tag=${termux_tag}"
+  echo "build_version=${termux_tag#v}"
   echo "upstream_prerelease=${upstream_prerelease}"
   echo "upstream_html_url=${upstream_html_url}"
   echo "upstream_repo=${upstream_repo}"
