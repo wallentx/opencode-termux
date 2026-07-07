@@ -16,6 +16,11 @@ normalize_tag_version() {
   printf '%s\n' "${version}"
 }
 
+requested_upstream_tag() {
+  local requested="${1#refs/tags/}"
+  printf 'v%s\n' "$(normalize_tag_version "${requested}")"
+}
+
 release_train_for_tag() {
   local version
   version="$(normalize_tag_version "$1")"
@@ -34,10 +39,12 @@ termux_tag_for_tag() {
   printf '%s-termux\n' "$1"
 }
 
-upstream_releases_json() {
-  gh api --method GET "repos/${UPSTREAM_REPO}/releases?per_page=50" \
+latest_release_json() {
+  gh api --method GET "repos/${UPSTREAM_REPO}/releases?per_page=1" \
     | jq -c '
-      map({
+      .[0] // empty
+      | select(type == "object")
+      | {
         tagName: (.tag_name // .tagName // ""),
         name: (.name // .tag_name // .tagName // ""),
         body: (.body // ""),
@@ -45,7 +52,7 @@ upstream_releases_json() {
         isPrerelease: (.prerelease // .isPrerelease // false),
         targetCommitish: (.target_commitish // .targetCommitish // ""),
         databaseId: (.id // .databaseId // "")
-      })
+      }
     '
 }
 
@@ -233,6 +240,7 @@ emit_selected_release() {
 
 maybe_select_release() {
   local release_json="$1"
+  local selection_mode="${2:-latest}"
   local upstream_tag
   local release_train
   local release_branch
@@ -261,7 +269,7 @@ maybe_select_release() {
   if [[ -n "${open_pr_json}" ]]; then
     open_pr_tag="$(jq -r '.upstreamTag // empty' <<< "${open_pr_json}")"
     work_branch="$(jq -r '.headRefName' <<< "${open_pr_json}")"
-    if [[ "${open_pr_tag}" == "${upstream_tag}" && -n "${REQUESTED_TAG}" ]]; then
+    if [[ "${open_pr_tag}" == "${upstream_tag}" && "${selection_mode}" == "requested" ]]; then
       emit_selected_release "${release_json}" "${release_branch}" "${work_branch}" "${termux_tag}"
       return 0
     fi
@@ -269,36 +277,38 @@ maybe_select_release() {
       echo "${upstream_tag} already has open release PR $(jq -r '.url' <<< "${open_pr_json}"); nothing to do."
       return 1
     fi
-    if ! version_is_newer "${upstream_tag}" "${open_pr_tag}"; then
+    if [[ "${selection_mode}" != "requested" ]] && ! version_is_newer "${upstream_tag}" "${open_pr_tag}"; then
       echo "${upstream_tag} is not newer than open PR tag ${open_pr_tag}; nothing to do."
       return 1
     fi
   fi
 
-  current_tag="$(release_branch_current_tag "${release_branch}")"
-  if ! version_is_newer "${upstream_tag}" "${current_tag}"; then
-    echo "${upstream_tag} is not newer than ${current_tag} already recorded on ${release_branch}; nothing to do."
-    return 1
-  fi
-
-  mirrored_tag="$(latest_mirrored_termux_tag)"
-  if ! version_is_newer "${upstream_tag}" "${mirrored_tag}"; then
-    echo "${upstream_tag} is not newer than ${mirrored_tag} already mirrored; nothing to do."
-    return 1
-  fi
-
-  mirrored_tag="$(latest_mirrored_termux_tag_for_train "${release_train}")"
-  if ! version_is_newer "${upstream_tag}" "${mirrored_tag}"; then
-    echo "${upstream_tag} is not newer than ${mirrored_tag} already mirrored for ${release_train}; nothing to do."
-    return 1
-  fi
-
-  if [[ "${BYPASS_PRIOR_RELEASE_TRAIN}" != "true" ]]; then
-    pending_other_prs="$(open_other_release_train_prs "${release_branch}")"
-    if [[ -n "${pending_other_prs}" ]]; then
-      echo "${upstream_tag} is newer, but another release train PR is open."
-      printf '%s\n' "${pending_other_prs}"
+  if [[ "${selection_mode}" != "requested" ]]; then
+    current_tag="$(release_branch_current_tag "${release_branch}")"
+    if ! version_is_newer "${upstream_tag}" "${current_tag}"; then
+      echo "${upstream_tag} is not newer than ${current_tag} already recorded on ${release_branch}; nothing to do."
       return 1
+    fi
+
+    mirrored_tag="$(latest_mirrored_termux_tag)"
+    if ! version_is_newer "${upstream_tag}" "${mirrored_tag}"; then
+      echo "${upstream_tag} is not newer than ${mirrored_tag} already mirrored; nothing to do."
+      return 1
+    fi
+
+    mirrored_tag="$(latest_mirrored_termux_tag_for_train "${release_train}")"
+    if ! version_is_newer "${upstream_tag}" "${mirrored_tag}"; then
+      echo "${upstream_tag} is not newer than ${mirrored_tag} already mirrored for ${release_train}; nothing to do."
+      return 1
+    fi
+
+    if [[ "${BYPASS_PRIOR_RELEASE_TRAIN}" != "true" ]]; then
+      pending_other_prs="$(open_other_release_train_prs "${release_branch}")"
+      if [[ -n "${pending_other_prs}" ]]; then
+        echo "${upstream_tag} is newer, but another release train PR is open."
+        printf '%s\n' "${pending_other_prs}"
+        return 1
+      fi
     fi
   fi
 
@@ -306,15 +316,18 @@ maybe_select_release() {
 }
 
 if [[ -n "${REQUESTED_TAG}" ]]; then
-  if maybe_select_release "$(release_json_for_tag "${REQUESTED_TAG}")"; then
+  requested_tag="$(requested_upstream_tag "${REQUESTED_TAG}")"
+  if ! release_json="$(release_json_for_tag "${requested_tag}")"; then
+    echo "Requested upstream release ${requested_tag} does not exist remotely."
+  elif maybe_select_release "${release_json}" "requested"; then
     exit 0
+  else
+    echo "Requested upstream release ${requested_tag} does not need a Termux mirror."
   fi
 else
-  while IFS= read -r release_json; do
-    if maybe_select_release "${release_json}"; then
-      exit 0
-    fi
-  done < <(upstream_releases_json | jq -c '.[]')
+  if release_json="$(latest_release_json)" && [[ -n "${release_json}" ]] && maybe_select_release "${release_json}"; then
+    exit 0
+  fi
 fi
 
 echo "No upstream release needs a Termux mirror."

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: "Specific upstream tag to process, for example v1.17.13"
+        description: "Specific upstream version or tag to process, for example 1.17.13 or v1.17.13"
         required: false
         type: string
         default: ""
@@ -28,9 +28,22 @@ on:
 
 permissions:
   actions: write
+  artifact-metadata: read
+  attestations: read
+  checks: read
+  code-quality: read
   contents: write
+  deployments: read
+  discussions: read
+  id-token: none
   issues: write
+  models: read
+  packages: read
+  pages: read
   pull-requests: write
+  security-events: read
+  statuses: read
+  vulnerability-alerts: read
 
 concurrency:
   group: termux-release-watch
@@ -86,6 +99,13 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token || github.token }}
 
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
       - name: Validate GitHub CLI environment
         run: bash scripts/termux-validate-gh-env.sh
 
@@ -131,6 +151,13 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun

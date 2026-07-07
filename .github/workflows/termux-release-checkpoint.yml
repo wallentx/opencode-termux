@@ -24,9 +24,23 @@ on:
         default: "wallentx"
 
 permissions:
+  actions: read
+  artifact-metadata: read
+  attestations: read
+  checks: read
+  code-quality: read
   contents: write
+  deployments: read
+  discussions: read
+  id-token: none
   issues: write
+  models: read
+  packages: read
+  pages: read
   pull-requests: write
+  security-events: read
+  statuses: read
+  vulnerability-alerts: read
 
 concurrency:
   group: termux-release-checkpoint-${{ inputs.source_branch }}-${{ inputs.destination_branch }}
@@ -67,6 +81,13 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.destination_branch }}
           token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
 
       - name: Validate GitHub CLI environment
         run: bash scripts/termux-validate-gh-env.sh
