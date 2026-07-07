@@ -106,14 +106,14 @@ jobs:
           checkout: false
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Select upstream release
         id: upstream
         env:
           REQUESTED_TAG: ${{ inputs.upstream_tag }}
           BYPASS_PRIOR_RELEASE_TRAIN: ${{ inputs.bypass_prior_release_train || false }}
-        run: bash scripts/termux-select-release.sh
+        run: bash .github/scripts/termux-select-release.sh
 
   create-release-pr:
     needs: look-for-newer-release
@@ -162,14 +162,14 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Configure git
         env:
           UPSTREAM_TAG: ${{ needs.look-for-newer-release.outputs.upstream_tag }}
         run: |
           set -euo pipefail
-          bash scripts/termux-configure-git.sh \
+          bash .github/scripts/termux-configure-git.sh \
             --origin "${PATCH_BRANCH}" \
             --upstream-tag "${UPSTREAM_REPO}" "${UPSTREAM_TAG}"
 
@@ -187,4 +187,4 @@ jobs:
           WORK_BRANCH: ${{ needs.look-for-newer-release.outputs.work_branch }}
           TERMUX_TAG: ${{ needs.look-for-newer-release.outputs.termux_tag }}
           UPSTREAM_BODY: ${{ needs.look-for-newer-release.outputs.body }}
-        run: bash scripts/termux-create-release-pr.sh
+        run: bash .github/scripts/termux-create-release-pr.sh

@@ -87,11 +87,11 @@ jobs:
           checkout: false
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Delete release branches after merged checkpoints
         env:
           CHECKPOINT_PR: ${{ inputs.checkpoint_pr }}
           SOURCE_BRANCH: ${{ inputs.release_branch }}
           CLEANUP_LIMIT: ${{ inputs.cleanup_limit || '100' }}
-        run: bash scripts/termux-cleanup-release-branch.sh
+        run: bash .github/scripts/termux-cleanup-release-branch.sh

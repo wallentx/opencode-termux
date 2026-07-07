@@ -21,8 +21,8 @@ set -euo pipefail
 : "${GH_TOKEN:?GH_TOKEN is required}"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-automation_root="$(cd -- "${script_dir}/.." && pwd)"
-# shellcheck source=scripts/termux-release-paths.sh
+automation_root="$(cd -- "${script_dir}/../.." && pwd)"
+# shellcheck source=.github/scripts/termux-release-paths.sh
 source "${script_dir}/termux-release-paths.sh"
 
 pr_title="Termux ${UPSTREAM_TAG}"
@@ -44,7 +44,7 @@ seed_release_automation_files() {
     mkdir -p "$(dirname "${seeded_path}")"
     cp "${seed_dir}/${seeded_path}" "${seeded_path}"
     case "${seeded_path}" in
-      scripts/*.sh)
+      .github/scripts/*.sh)
         chmod +x "${seeded_path}"
         ;;
     esac

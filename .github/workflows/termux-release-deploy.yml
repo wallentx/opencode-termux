@@ -102,21 +102,21 @@ jobs:
           checkout: false
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Configure git
-        run: bash scripts/termux-configure-git.sh
+        run: bash .github/scripts/termux-configure-git.sh
 
       - name: Resolve release ref
         id: release-ref
         env:
           INPUT_RELEASE_BRANCH: ${{ inputs.release_branch }}
           INPUT_RELEASE_SHA: ${{ inputs.release_sha }}
-        run: bash scripts/termux-resolve-release-ref.sh
+        run: bash .github/scripts/termux-resolve-release-ref.sh
 
       - name: Read release metadata
         id: metadata
-        run: bash scripts/termux-read-release-metadata.sh
+        run: bash .github/scripts/termux-read-release-metadata.sh
 
       - name: Find merged release PR
         id: pr
@@ -126,7 +126,7 @@ jobs:
           RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           INPUT_PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
-        run: bash scripts/termux-find-release-pr.sh
+        run: bash .github/scripts/termux-find-release-pr.sh
 
       - name: Create Android build deployment
         id: android-deployment
@@ -135,7 +135,7 @@ jobs:
           RELEASE_BRANCH: ${{ steps.release-ref.outputs.branch }}
           RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
           TERMUX_TAG: ${{ steps.metadata.outputs.termux_tag }}
-        run: bash scripts/termux-create-android-build-deployment.sh
+        run: bash .github/scripts/termux-create-android-build-deployment.sh
 
       - name: Build Android artifact
         if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
@@ -158,7 +158,7 @@ jobs:
         env:
           DEPLOYMENT_ID: ${{ steps.android-deployment.outputs.deployment_id }}
           BUILD_RESULT: ${{ job.status }}
-        run: bash scripts/termux-finish-android-build-deployment.sh
+        run: bash .github/scripts/termux-finish-android-build-deployment.sh
 
       - name: Download existing Android artifact if release needs repair
         if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists == 'true'
@@ -187,7 +187,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
-        run: bash scripts/termux-create-or-update-mirrored-release.sh
+        run: bash .github/scripts/termux-create-or-update-mirrored-release.sh
 
       - name: Open checkpoint PR
         id: checkpoint-pr
@@ -197,11 +197,11 @@ jobs:
           SOURCE_SHA: ${{ steps.release-ref.outputs.sha }}
           DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
           REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
-        run: bash scripts/termux-create-checkpoint-pr.sh
+        run: bash .github/scripts/termux-create-checkpoint-pr.sh
 
       - name: Delete release branch after merged checkpoint
         if: steps.metadata.outputs.deploy == 'true' && steps.checkpoint-pr.outputs.pr_url != ''
         env:
           CHECKPOINT_PR: ${{ steps.checkpoint-pr.outputs.pr_url }}
           SOURCE_BRANCH: ${{ steps.release-ref.outputs.branch }}
-        run: bash scripts/termux-cleanup-release-branch.sh
+        run: bash .github/scripts/termux-cleanup-release-branch.sh

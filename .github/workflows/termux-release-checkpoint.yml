@@ -89,10 +89,10 @@ jobs:
           checkout: false
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Configure git
-        run: bash scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
+        run: bash .github/scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
         env:
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
@@ -104,11 +104,11 @@ jobs:
           REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
           DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
           REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
-        run: bash scripts/termux-create-checkpoint-pr.sh
+        run: bash .github/scripts/termux-create-checkpoint-pr.sh
 
       - name: Delete release branch after merged checkpoint
         if: steps.checkpoint-pr.outputs.pr_url != ''
         env:
           CHECKPOINT_PR: ${{ steps.checkpoint-pr.outputs.pr_url }}
           SOURCE_BRANCH: ${{ inputs.source_branch }}
-        run: bash scripts/termux-cleanup-release-branch.sh
+        run: bash .github/scripts/termux-cleanup-release-branch.sh
