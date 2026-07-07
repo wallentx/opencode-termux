@@ -1,5 +1,5 @@
 name: publish
-run-name: "${{ format('release {0}', inputs.bump) }}"
+run-name: "${{ inputs.target == 'android-arm64' && 'build android artifact' || inputs.target == 'android-smoke' && 'build android smoke artifact' || format('release {0}', inputs.bump) }}"
 
 on:
   push:
@@ -23,8 +23,17 @@ on:
         description: "Override version (optional)"
         required: false
         type: string
+      target:
+        description: "Manual build target"
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - android-arm64
+          - android-smoke
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.version || inputs.bump }}
+concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.target || 'all' }}-${{ inputs.version || inputs.bump }}
 
 permissions:
   id-token: write
@@ -34,7 +43,7 @@ permissions:
 jobs:
   version:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' && !contains(fromJSON('["android-arm64","android-smoke"]'), inputs.target)
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
@@ -71,13 +80,18 @@ jobs:
   build-cli:
     needs: version
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' && !contains(fromJSON('["android-arm64","android-smoke"]'), inputs.target)
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
         with:
           fetch-tags: true
 
       - uses: ./.github/actions/setup-bun
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.15.2
 
       - name: Setup git committer
         id: committer
@@ -101,6 +115,7 @@ jobs:
         with:
           name: opencode-cli
           path: |
+            packages/opencode/dist/opencode-android*
             packages/opencode/dist/opencode-darwin*
             packages/opencode/dist/opencode-linux*
 
@@ -116,6 +131,109 @@ jobs:
 
     outputs:
       version: ${{ needs.version.outputs.version }}
+
+  build-android:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'android-arm64'
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        with:
+          fetch-tags: true
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.15.2
+
+      - name: Install Bun build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends wget gnupg software-properties-common ninja-build cmake
+          wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          chmod +x "$RUNNER_TEMP/llvm.sh"
+          sudo "$RUNNER_TEMP/llvm.sh" 21
+          sudo apt-get install -y --no-install-recommends clang-21 lld-21
+          LLVM_RESOURCE_DIR="$(clang-21 -print-resource-dir)"
+          NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          NDK_CLANG_VERSION="$(ls "$NDK_PREBUILT/lib/clang" | sort -V | tail -n 1)"
+          NDK_RUNTIME_DIR="$NDK_PREBUILT/lib/clang/$NDK_CLANG_VERSION/lib/linux"
+          sudo mkdir -p "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28" "$LLVM_RESOURCE_DIR/lib/linux/aarch64"
+          sudo ln -sf "$NDK_RUNTIME_DIR/libclang_rt.builtins-aarch64-android.a" "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28/libclang_rt.builtins.a"
+          sudo ln -sf "$NDK_RUNTIME_DIR/aarch64/libunwind.a" "$LLVM_RESOURCE_DIR/lib/aarch64-unknown-linux-android28/libunwind.a"
+          sudo ln -sf "$NDK_RUNTIME_DIR/libclang_rt.builtins-aarch64-android.a" "$LLVM_RESOURCE_DIR/lib/linux/libclang_rt.builtins-aarch64-android.a"
+          sudo ln -sf "$NDK_RUNTIME_DIR/aarch64/libunwind.a" "$LLVM_RESOURCE_DIR/lib/linux/aarch64/libunwind.a"
+
+      - name: Build Android Bun runtime with FFI
+        run: |
+          export CC=clang-21
+          export CXX=clang++-21
+          export LD=ld.lld-21
+          NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+          mkdir -p "$RUNNER_TEMP/android-toolchain-bin"
+          ln -sf "$NDK_PREBUILT/bin/llvm-strip" "$RUNNER_TEMP/android-toolchain-bin/strip"
+          export PATH="$RUNNER_TEMP/android-toolchain-bin:$PATH"
+          BUN_VERSION="$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          BUN_SOURCE="$RUNNER_TEMP/bun-src"
+          git clone --depth=1 --branch "bun-v${BUN_VERSION}" https://github.com/oven-sh/bun.git "$BUN_SOURCE"
+          BUN_BUILD="$BUN_SOURCE/build/android-ffi"
+          cd "$BUN_SOURCE"
+          bun install --frozen-lockfile
+          bun scripts/build.ts --profile=android-release --tinycc=on --build-dir="$BUN_BUILD" --target=bun -j"$(nproc)"
+          test -x "$BUN_BUILD/bun"
+          file "$BUN_BUILD/bun"
+          echo "OPENCODE_ANDROID_BUN=$BUN_BUILD/bun" >> "$GITHUB_ENV"
+
+      - name: Build Android CLI
+        run: ./packages/opencode/script/build.ts --target=android-arm64
+        env:
+          OPENCODE_VERSION: ${{ inputs.version || format('0.0.0-android.{0}', github.run_number) }}
+          OPENCODE_RELEASE: ""
+          GH_REPO: ${{ github.repository }}
+
+      - name: Pack Android artifact
+        working-directory: packages/opencode/dist/opencode-android-arm64/bin
+        run: tar -czf ../../opencode-android-arm64.tar.gz *
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: opencode-android-arm64
+          path: |
+            packages/opencode/dist/opencode-android-arm64
+            packages/opencode/dist/opencode-android-arm64.tar.gz
+
+  build-android-smoke:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'android-smoke'
+    steps:
+      - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build Android compile smoke
+        run: |
+          mkdir -p "$RUNNER_TEMP/opencode-android-smoke"
+          cat > "$RUNNER_TEMP/opencode-android-smoke/smoke.ts" <<'EOF'
+          console.log("bun android compile smoke")
+          console.log(process.platform)
+          console.log(process.arch)
+          EOF
+          bun build "$RUNNER_TEMP/opencode-android-smoke/smoke.ts" \
+            --compile \
+            --target=bun-android-arm64 \
+            --outfile="$RUNNER_TEMP/opencode-android-smoke/smoke"
+          bun packages/opencode/script/patch-android-elf.ts "$RUNNER_TEMP/opencode-android-smoke/smoke"
+          file "$RUNNER_TEMP/opencode-android-smoke/smoke" | tee "$RUNNER_TEMP/opencode-android-smoke/file.txt"
+          readelf -l "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-program-headers.txt"
+          readelf -S "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-sections.txt"
+          readelf -d "$RUNNER_TEMP/opencode-android-smoke/smoke" > "$RUNNER_TEMP/opencode-android-smoke/readelf-dynamic.txt"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bun-android-compile-smoke
+          path: ${{ runner.temp }}/opencode-android-smoke
 
   sign-cli-windows:
     needs:
@@ -411,14 +529,15 @@ jobs:
       - build-cli
       - sign-cli-windows
       - build-electron
-    if: always() && !failure() && !cancelled()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: github.repository == 'anomalyco/opencode' && (always() && !failure() && !cancelled())
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
       - uses: ./.github/actions/setup-bun
 
       - name: Login to GitHub Container Registry
+        if: github.repository == 'anomalyco/opencode'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
@@ -470,6 +589,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup git committer
+        if: github.repository == 'anomalyco/opencode'
         id: committer
         uses: ./.github/actions/setup-git-committer
         with:
@@ -485,6 +605,7 @@ jobs:
             ${{ runner.os }}-apt-aur-
 
       - name: Setup SSH for AUR
+        if: github.repository == 'anomalyco/opencode'
         run: |
           sudo apt-get update
           sudo apt-get install -y pacman-package-manager
@@ -496,7 +617,7 @@ jobs:
           ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts || true
 
       - name: Upload desktop release assets
-        if: needs.version.outputs.release
+        if: github.repository == 'anomalyco/opencode' && (needs.version.outputs.release)
         env:
           GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
@@ -509,6 +630,7 @@ jobs:
           gh release upload "v${{ needs.version.outputs.version }}" "${files[@]}" --clobber --repo "${{ needs.version.outputs.repo }}"
 
       - run: ./script/publish.ts
+        if: github.repository == 'anomalyco/opencode'
         env:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
