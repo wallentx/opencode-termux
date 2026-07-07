@@ -6,6 +6,7 @@ on:
 
 jobs:
   triage:
+    if: github.repository == 'anomalyco/opencode'
     runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: read

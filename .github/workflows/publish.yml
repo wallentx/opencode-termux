@@ -40,7 +40,6 @@ permissions:
   artifact-metadata: read
   attestations: read
   checks: read
-  code-quality: read
   id-token: write
   contents: write
   deployments: read
@@ -52,7 +51,6 @@ permissions:
   pull-requests: read
   security-events: read
   statuses: read
-  vulnerability-alerts: read
 
 jobs:
   version:

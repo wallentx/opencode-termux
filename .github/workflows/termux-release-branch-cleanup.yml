@@ -1,27 +1,25 @@
-name: termux-release-checkpoint
+name: termux-release-branch-cleanup
 
 on:
   workflow_dispatch:
     inputs:
-      source_branch:
-        description: "Release branch to checkpoint from"
-        required: true
-        type: string
-      source_sha:
-        description: "Release branch SHA; defaults to source branch head"
+      release_branch:
+        description: "Release branch to clean up, for example release-1.17.13"
         required: false
         type: string
         default: ""
-      destination_branch:
-        description: "Reusable Termux patch branch"
+      checkpoint_pr:
+        description: "Checkpoint PR number or URL to verify before cleanup"
         required: false
         type: string
-        default: "termux-target"
-      reviewer:
-        description: "GitHub username to request as reviewer"
+        default: ""
+      cleanup_limit:
+        description: "Number of recent merged checkpoint PRs to scan"
         required: false
         type: string
-        default: "wallentx"
+        default: "100"
+  schedule:
+    - cron: "37 8 * * *"
 
 permissions:
   actions: read
@@ -32,16 +30,16 @@ permissions:
   deployments: read
   discussions: read
   id-token: none
-  issues: write
+  issues: read
   models: read
   packages: read
   pages: read
-  pull-requests: write
+  pull-requests: read
   security-events: read
   statuses: read
 
 concurrency:
-  group: termux-release-checkpoint-${{ inputs.source_branch }}-${{ inputs.destination_branch }}
+  group: termux-release-branch-cleanup-${{ inputs.release_branch || inputs.checkpoint_pr || github.event_name }}
   cancel-in-progress: false
 
 defaults:
@@ -49,10 +47,10 @@ defaults:
     shell: bash
 
 jobs:
-  checkpoint:
+  cleanup:
     if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -74,11 +72,11 @@ jobs:
           echo "::warning::GitHub App token unavailable; falling back to GITHUB_TOKEN."
           echo "GH_TOKEN=${FALLBACK_TOKEN}" >> "${GITHUB_ENV}"
 
-      - name: Checkout destination branch
+      - name: Checkout automation branch
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          fetch-depth: 0
-          ref: ${{ inputs.destination_branch }}
+          fetch-depth: 1
+          ref: dev
           token: ${{ steps.app-token.outputs.token || github.token }}
 
       - name: 🧰 Actions Toolbox
@@ -91,24 +89,9 @@ jobs:
       - name: Validate GitHub CLI environment
         run: bash scripts/termux-validate-gh-env.sh
 
-      - name: Configure git
-        run: bash scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
+      - name: Delete release branches after merged checkpoints
         env:
-          SOURCE_BRANCH: ${{ inputs.source_branch }}
-          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
-
-      - name: Create checkpoint PR
-        id: checkpoint-pr
-        env:
-          REQUESTED_SOURCE_BRANCH: ${{ inputs.source_branch }}
-          REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
-          DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
-          REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
-        run: bash scripts/termux-create-checkpoint-pr.sh
-
-      - name: Delete release branch after merged checkpoint
-        if: steps.checkpoint-pr.outputs.pr_url != ''
-        env:
-          CHECKPOINT_PR: ${{ steps.checkpoint-pr.outputs.pr_url }}
-          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          CHECKPOINT_PR: ${{ inputs.checkpoint_pr }}
+          SOURCE_BRANCH: ${{ inputs.release_branch }}
+          CLEANUP_LIMIT: ${{ inputs.cleanup_limit || '100' }}
         run: bash scripts/termux-cleanup-release-branch.sh

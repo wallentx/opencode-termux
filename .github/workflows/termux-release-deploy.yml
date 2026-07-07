@@ -41,7 +41,6 @@ permissions:
   artifact-metadata: read
   attestations: read
   checks: read
-  code-quality: read
   contents: write
   deployments: write
   discussions: read
@@ -53,7 +52,6 @@ permissions:
   pull-requests: write
   security-events: read
   statuses: read
-  vulnerability-alerts: read
 
 concurrency:
   group: termux-release-deploy-${{ inputs.release_branch || github.ref_name }}
@@ -74,7 +72,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
+          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Export GitHub token for gh
@@ -192,6 +190,7 @@ jobs:
         run: bash scripts/termux-create-or-update-mirrored-release.sh
 
       - name: Open checkpoint PR
+        id: checkpoint-pr
         if: steps.metadata.outputs.deploy == 'true'
         env:
           SOURCE_BRANCH: ${{ steps.release-ref.outputs.branch }}
@@ -199,3 +198,10 @@ jobs:
           DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
           REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
         run: bash scripts/termux-create-checkpoint-pr.sh
+
+      - name: Delete release branch after merged checkpoint
+        if: steps.metadata.outputs.deploy == 'true' && steps.checkpoint-pr.outputs.pr_url != ''
+        env:
+          CHECKPOINT_PR: ${{ steps.checkpoint-pr.outputs.pr_url }}
+          SOURCE_BRANCH: ${{ steps.release-ref.outputs.branch }}
+        run: bash scripts/termux-cleanup-release-branch.sh

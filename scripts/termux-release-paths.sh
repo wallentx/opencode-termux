@@ -5,6 +5,7 @@ set -euo pipefail
 readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
   .github/actions/build-android-cli/action.yml
   .github/workflows/publish.yml
+  .github/workflows/termux-release-branch-cleanup.yml
   .github/workflows/termux-release-checkpoint.yml
   .github/workflows/termux-release-deploy.yml
   .github/workflows/termux-release-watch.yml
@@ -12,6 +13,7 @@ readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
 
 readonly -a TERMUX_RELEASE_SCRIPT_PATHS=(
   scripts/termux-configure-git.sh
+  scripts/termux-cleanup-release-branch.sh
   scripts/termux-create-checkpoint-pr.sh
   scripts/termux-create-android-build-deployment.sh
   scripts/termux-create-or-update-mirrored-release.sh

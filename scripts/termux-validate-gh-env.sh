@@ -7,7 +7,6 @@ set -euo pipefail
 
 command -v gh
 command -v jq
-gh auth status --hostname github.com
 
 printf 'GITHUB_REPOSITORY=%s\n' "${GITHUB_REPOSITORY}"
 printf 'GITHUB_REF_NAME=%s\n' "${GITHUB_REF_NAME:-}"
