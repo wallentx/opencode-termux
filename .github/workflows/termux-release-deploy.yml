@@ -69,30 +69,22 @@ jobs:
     steps:
       - name: Generate GitHub App token
         id: app-token
-        continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
+          client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - name: Export GitHub token for gh
+      - name: Export GitHub App token for gh
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          FALLBACK_TOKEN: ${{ github.token }}
-        run: |
-          if [[ -n "${APP_TOKEN}" ]]; then
-            echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
-            exit 0
-          fi
-          echo "::warning::GitHub App token unavailable; falling back to GITHUB_TOKEN."
-          echo "GH_TOKEN=${FALLBACK_TOKEN}" >> "${GITHUB_ENV}"
+        run: echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
 
       - name: Checkout release branch
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ inputs.release_branch || github.ref_name }}
-          token: ${{ steps.app-token.outputs.token || github.token }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: 🧰 Actions Toolbox
         uses: wallentx/gh-actions/composite/actions-toolbox@main

@@ -22,7 +22,7 @@ deployment_json="$(
       auto_merge: false,
       required_contexts: [],
       environment: "termux-android",
-      description: "Build Android artifact for " + $termux_tag,
+      description: ("Build Android artifact for " + $termux_tag),
       transient_environment: true,
       production_environment: false,
       payload: {
