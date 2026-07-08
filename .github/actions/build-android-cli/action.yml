@@ -75,6 +75,7 @@ runs:
         set -euo pipefail
         artifact_dir="packages/opencode/dist/opencode-android-arm64"
         binary="${artifact_dir}/bin/opencode"
+        opentui_lib="packages/opencode/node_modules/@opentui/core/android-arm64/libopentui.so"
         smoke_dir="packages/opencode/dist/android-smoke"
         mkdir -p "$smoke_dir"
 
@@ -95,6 +96,22 @@ runs:
           echo "Android artifact unexpectedly links Linux libc/runtime libraries." >&2
           exit 1
         fi
+
+        test -f "$opentui_lib"
+        file "$opentui_lib" | tee "$smoke_dir/opentui-file.txt"
+        readelf -d "$opentui_lib" | tee "$smoke_dir/opentui-readelf-dynamic.txt"
+        readelf -Ws "$opentui_lib" > "$smoke_dir/opentui-readelf-symbols.txt"
+        readelf -r "$opentui_lib" > "$smoke_dir/opentui-readelf-relocs.txt"
+
+        if grep -E "Shared library: \\[(libc\\.so\\.6|ld-linux|ld-musl|libstdc\\+\\+|libgcc_s)" "$smoke_dir/opentui-readelf-dynamic.txt"; then
+          echo "OpenTUI Android library unexpectedly links non-Android runtime libraries." >&2
+          exit 1
+        fi
+        if grep -E "Shared library: \\[(libc\\+\\+|libc\\+\\+_shared|libunwind)\\.so" "$smoke_dir/opentui-readelf-dynamic.txt"; then
+          echo "OpenTUI Android library requires an unbundled C++/unwind runtime." >&2
+          exit 1
+        fi
+        grep -E " (YGNode|facebook4yoga|yogaNode)" "$smoke_dir/opentui-readelf-symbols.txt" | head -80 || true
 
     - name: Pack Android artifact
       shell: bash

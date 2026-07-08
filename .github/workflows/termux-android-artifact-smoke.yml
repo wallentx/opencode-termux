@@ -1,0 +1,212 @@
+name: termux-android-artifact-smoke
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Name of the Actions artifact to download from artifact_run_id.
+        required: true
+        type: string
+      artifact_run_id:
+        description: Workflow run id containing artifact_name.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke opencode in Termux
+    uses: wallentx/gh-actions/.github/workflows/termux-run.yml@main
+    secrets:
+      github-token: ${{ github.token }}
+    with:
+      packages: |
+        binutils
+        ca-certificates
+        coreutils
+        file
+        python
+        tar
+      copy-paths: |
+        termux-smoke-artifact
+      env: |
+        ARTIFACT_NAME=${{ inputs.artifact_name }}
+        ARTIFACT_RUN_ID=${{ inputs.artifact_run_id }}
+        DOWNLOAD_DIR=termux-smoke-artifact
+      host-commands: |
+        set -Eeuo pipefail
+
+        rm -rf "$DOWNLOAD_DIR"
+        mkdir -p "$DOWNLOAD_DIR"
+        gh run download "$ARTIFACT_RUN_ID" \
+          --repo "$GITHUB_REPOSITORY" \
+          --name "$ARTIFACT_NAME" \
+          --dir "$DOWNLOAD_DIR"
+
+        test -f "$DOWNLOAD_DIR/opencode-android-arm64.tar.gz"
+        tar -tzf "$DOWNLOAD_DIR/opencode-android-arm64.tar.gz"
+      commands: |
+        set -Eeuo pipefail
+
+        archive="$(
+          find termux-smoke-artifact -type f -name 'opencode-android-arm64.tar.gz' -print -quit
+        )"
+        if [[ -z "$archive" ]]; then
+          echo "Could not find opencode-android-arm64.tar.gz in termux-smoke-artifact." >&2
+          find termux-smoke-artifact -maxdepth 4 -type f -print >&2
+          exit 1
+        fi
+
+        rm -rf opencode-smoke termux-smoke-output termux-home smoke-project
+        mkdir -p opencode-smoke termux-smoke-output termux-home smoke-project
+        tar -xzf "$archive" -C opencode-smoke
+        find opencode-smoke -maxdepth 3 -type f -print | tee termux-smoke-output/files.txt
+
+        binary=""
+        for candidate in \
+          opencode-smoke/opencode \
+          opencode-smoke/bin/opencode \
+          opencode-smoke/opencode-android-arm64/bin/opencode
+        do
+          if [[ -x "$candidate" ]]; then
+            binary="$candidate"
+            break
+          fi
+        done
+
+        if [[ -z "$binary" ]]; then
+          echo "Could not find executable opencode in $archive." >&2
+          exit 1
+        fi
+
+        binary="$(realpath "$binary")"
+        file "$binary" | tee termux-smoke-output/file.txt
+        readelf -h "$binary" | tee termux-smoke-output/readelf-header.txt
+        readelf -l "$binary" | tee termux-smoke-output/readelf-program-headers.txt
+        readelf -d "$binary" | tee termux-smoke-output/readelf-dynamic.txt
+
+        grep -q "Machine:.*AArch64" termux-smoke-output/readelf-header.txt
+        grep -q "Type:.*DYN" termux-smoke-output/readelf-header.txt
+        if grep -E "Requesting program interpreter: .*(ld-linux|ld-musl)" termux-smoke-output/readelf-program-headers.txt; then
+          echo "Android artifact unexpectedly references a Linux ELF interpreter." >&2
+          exit 1
+        fi
+        if grep -E "Shared library: \[(libc\.so\.6|ld-linux|ld-musl)" termux-smoke-output/readelf-dynamic.txt; then
+          echo "Android artifact unexpectedly links Linux libc/runtime libraries." >&2
+          exit 1
+        fi
+
+        "$binary" --version | tee termux-smoke-output/version.txt
+        "$binary" -h | tee termux-smoke-output/help.txt
+        grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
+        strings -a "$binary" | grep -m 1 '@opentui+core@' | tee termux-smoke-output/opentui-version.txt
+
+        export HOME="$PWD/termux-home"
+        export OPENCODE_DISABLE_AUTOUPDATE=1
+        export TERM=xterm-256color
+        export SMOKE_OUTPUT="$PWD/termux-smoke-output"
+
+        cd smoke-project
+
+        smoke_tui() {
+          local name="$1"
+          shift
+          python - "$binary" "$name" "$@" <<'PY'
+        import os
+        import pty
+        import select
+        import subprocess
+        import sys
+        import time
+
+        binary = sys.argv[1]
+        name = sys.argv[2]
+        args = sys.argv[3:]
+        output_dir = os.environ["SMOKE_OUTPUT"]
+        log_path = os.path.join(output_dir, f"{name}.pty.log")
+        env = os.environ.copy()
+        env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
+        env.setdefault("TERM", "xterm-256color")
+        master, slave = pty.openpty()
+        start = time.monotonic()
+        proc = subprocess.Popen(
+            [binary, *args],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            env=env,
+            close_fds=True,
+        )
+        os.close(slave)
+        survive_seconds = float(os.environ.get("OPENCODE_TUI_SMOKE_SECONDS", "8"))
+        deadline = start + survive_seconds
+        output = bytearray()
+
+        def drain():
+            while True:
+                ready, _, _ = select.select([master], [], [], 0)
+                if not ready:
+                    return
+                try:
+                    chunk = os.read(master, 4096)
+                except OSError:
+                    return
+                if not chunk:
+                    return
+                output.extend(chunk)
+
+        try:
+            while time.monotonic() < deadline:
+                ready, _, _ = select.select([master], [], [], 0.2)
+                if ready:
+                    try:
+                        chunk = os.read(master, 4096)
+                    except OSError:
+                        break
+                    if chunk:
+                        output.extend(chunk)
+                code = proc.poll()
+                if code is not None:
+                    drain()
+                    with open(log_path, "wb") as handle:
+                        handle.write(output)
+                    tail = bytes(output[-4000:]).decode("utf-8", "replace")
+                    print(tail, file=sys.stderr)
+                    raise SystemExit(f"{name} exited before {survive_seconds:.1f}s with code {code}")
+
+            if proc.poll() is not None:
+                drain()
+                with open(log_path, "wb") as handle:
+                    handle.write(output)
+                raise SystemExit(f"{name} exited before stable window with code {proc.returncode}")
+
+            os.write(master, b"\x03")
+            time.sleep(0.5)
+            if proc.poll() is None:
+                os.write(master, b"\x03")
+                time.sleep(0.5)
+            if proc.poll() is None:
+                proc.terminate()
+                time.sleep(0.5)
+            if proc.poll() is None:
+                proc.kill()
+            drain()
+            with open(log_path, "wb") as handle:
+                handle.write(output)
+            print(f"{name} survived {survive_seconds:.1f}s without abort")
+        finally:
+            try:
+                os.close(master)
+            except OSError:
+                pass
+        PY
+        }
+
+        smoke_tui default --pure --print-logs --log-level DEBUG
+        smoke_tui mini --mini --demo --pure --print-logs --log-level DEBUG
+      sync-back-paths: |
+        termux-smoke-output
+      upload-artifact-name: opencode-android-arm64-termux-smoke-${{ inputs.artifact_run_id }}
