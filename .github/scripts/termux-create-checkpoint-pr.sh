@@ -8,7 +8,7 @@ set -euo pipefail
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/termux-release-paths.sh
+# shellcheck source=.github/scripts/termux-release-paths.sh
 source "${script_dir}/termux-release-paths.sh"
 
 source_branch="${SOURCE_BRANCH:-${REQUESTED_SOURCE_BRANCH:-${GITHUB_REF_NAME:-}}}"

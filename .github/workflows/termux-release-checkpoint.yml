@@ -28,7 +28,6 @@ permissions:
   artifact-metadata: read
   attestations: read
   checks: read
-  code-quality: read
   contents: write
   deployments: read
   discussions: read
@@ -40,7 +39,6 @@ permissions:
   pull-requests: write
   security-events: read
   statuses: read
-  vulnerability-alerts: read
 
 concurrency:
   group: termux-release-checkpoint-${{ inputs.source_branch }}-${{ inputs.destination_branch }}
@@ -52,6 +50,7 @@ defaults:
 
 jobs:
   checkpoint:
+    if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -60,7 +59,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
+          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Export GitHub token for gh
@@ -90,18 +89,26 @@ jobs:
           checkout: false
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Configure git
-        run: bash scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
+        run: bash .github/scripts/termux-configure-git.sh --origin "${SOURCE_BRANCH}" "${DESTINATION_BRANCH}"
         env:
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
 
       - name: Create checkpoint PR
+        id: checkpoint-pr
         env:
           REQUESTED_SOURCE_BRANCH: ${{ inputs.source_branch }}
           REQUESTED_SOURCE_SHA: ${{ inputs.source_sha }}
           DESTINATION_BRANCH: ${{ inputs.destination_branch || 'termux-target' }}
           REVIEWER: ${{ inputs.reviewer || 'wallentx' }}
-        run: bash scripts/termux-create-checkpoint-pr.sh
+        run: bash .github/scripts/termux-create-checkpoint-pr.sh
+
+      - name: Delete release branch after merged checkpoint
+        if: steps.checkpoint-pr.outputs.pr_url != ''
+        env:
+          CHECKPOINT_PR: ${{ steps.checkpoint-pr.outputs.pr_url }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: bash .github/scripts/termux-cleanup-release-branch.sh

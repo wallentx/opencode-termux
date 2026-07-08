@@ -3,24 +3,28 @@
 set -euo pipefail
 
 readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
+  .github/actions/build-android-cli/action.yml
   .github/workflows/publish.yml
+  .github/workflows/termux-release-branch-cleanup.yml
   .github/workflows/termux-release-checkpoint.yml
   .github/workflows/termux-release-deploy.yml
   .github/workflows/termux-release-watch.yml
 )
 
 readonly -a TERMUX_RELEASE_SCRIPT_PATHS=(
-  scripts/termux-configure-git.sh
-  scripts/termux-create-checkpoint-pr.sh
-  scripts/termux-create-or-update-mirrored-release.sh
-  scripts/termux-create-release-pr.sh
-  scripts/termux-dispatch-android-build.sh
-  scripts/termux-find-release-pr.sh
-  scripts/termux-read-release-metadata.sh
-  scripts/termux-release-paths.sh
-  scripts/termux-resolve-release-ref.sh
-  scripts/termux-select-release.sh
-  scripts/termux-validate-gh-env.sh
+  .github/scripts/termux-configure-git.sh
+  .github/scripts/termux-cleanup-release-branch.sh
+  .github/scripts/termux-create-checkpoint-pr.sh
+  .github/scripts/termux-create-android-build-deployment.sh
+  .github/scripts/termux-create-or-update-mirrored-release.sh
+  .github/scripts/termux-create-release-pr.sh
+  .github/scripts/termux-find-release-pr.sh
+  .github/scripts/termux-finish-android-build-deployment.sh
+  .github/scripts/termux-read-release-metadata.sh
+  .github/scripts/termux-release-paths.sh
+  .github/scripts/termux-resolve-release-ref.sh
+  .github/scripts/termux-select-release.sh
+  .github/scripts/termux-validate-gh-env.sh
 )
 
 readonly -a TERMUX_RELEASE_AUTOMATION_PATHS=(

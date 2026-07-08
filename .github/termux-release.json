@@ -10,6 +10,6 @@
   "release_branch": "release-1.17.14",
   "work_branch": "termux-1.17.14",
   "patch_branch": "termux-target",
-  "patch_source_sha": "88bc4987258e3cf2d6db08bc867c6f0722df9295",
+  "patch_source_sha": "7b75f81296e3b2066dca7ee145da96eca5af7265",
   "termux_tag": "v1.17.14-termux"
 }

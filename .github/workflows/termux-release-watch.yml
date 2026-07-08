@@ -31,7 +31,6 @@ permissions:
   artifact-metadata: read
   attestations: read
   checks: read
-  code-quality: read
   contents: write
   deployments: read
   discussions: read
@@ -43,7 +42,6 @@ permissions:
   pull-requests: write
   security-events: read
   statuses: read
-  vulnerability-alerts: read
 
 concurrency:
   group: termux-release-watch
@@ -55,6 +53,7 @@ defaults:
 
 jobs:
   look-for-newer-release:
+    if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -78,7 +77,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
+          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Export GitHub token for gh
@@ -107,18 +106,18 @@ jobs:
           checkout: false
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Select upstream release
         id: upstream
         env:
           REQUESTED_TAG: ${{ inputs.upstream_tag }}
           BYPASS_PRIOR_RELEASE_TRAIN: ${{ inputs.bypass_prior_release_train || false }}
-        run: bash scripts/termux-select-release.sh
+        run: bash .github/scripts/termux-select-release.sh
 
   create-release-pr:
     needs: look-for-newer-release
-    if: needs.look-for-newer-release.outputs.selected == 'true'
+    if: github.repository == 'wallentx/opencode-termux' && needs.look-for-newer-release.outputs.selected == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -131,7 +130,7 @@ jobs:
         continue-on-error: true
         uses: actions/create-github-app-token@v3
         with:
-          client-id: ${{ vars.APP_CLIENT_ID }}
+          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
       - name: Export GitHub token for gh
@@ -163,14 +162,14 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Validate GitHub CLI environment
-        run: bash scripts/termux-validate-gh-env.sh
+        run: bash .github/scripts/termux-validate-gh-env.sh
 
       - name: Configure git
         env:
           UPSTREAM_TAG: ${{ needs.look-for-newer-release.outputs.upstream_tag }}
         run: |
           set -euo pipefail
-          bash scripts/termux-configure-git.sh \
+          bash .github/scripts/termux-configure-git.sh \
             --origin "${PATCH_BRANCH}" \
             --upstream-tag "${UPSTREAM_REPO}" "${UPSTREAM_TAG}"
 
@@ -188,4 +187,4 @@ jobs:
           WORK_BRANCH: ${{ needs.look-for-newer-release.outputs.work_branch }}
           TERMUX_TAG: ${{ needs.look-for-newer-release.outputs.termux_tag }}
           UPSTREAM_BODY: ${{ needs.look-for-newer-release.outputs.body }}
-        run: bash scripts/termux-create-release-pr.sh
+        run: bash .github/scripts/termux-create-release-pr.sh

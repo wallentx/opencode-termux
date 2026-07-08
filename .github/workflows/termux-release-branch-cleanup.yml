@@ -1,0 +1,97 @@
+name: termux-release-branch-cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: "Release branch to clean up, for example release-1.17.13"
+        required: false
+        type: string
+        default: ""
+      checkpoint_pr:
+        description: "Checkpoint PR number or URL to verify before cleanup"
+        required: false
+        type: string
+        default: ""
+      cleanup_limit:
+        description: "Number of recent merged checkpoint PRs to scan"
+        required: false
+        type: string
+        default: "100"
+  schedule:
+    - cron: "37 8 * * *"
+
+permissions:
+  actions: read
+  artifact-metadata: read
+  attestations: read
+  checks: read
+  contents: write
+  deployments: read
+  discussions: read
+  id-token: none
+  issues: read
+  models: read
+  packages: read
+  pages: read
+  pull-requests: read
+  security-events: read
+  statuses: read
+
+concurrency:
+  group: termux-release-branch-cleanup-${{ inputs.release_branch || inputs.checkpoint_pr || github.event_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  cleanup:
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_ID || vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          FALLBACK_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -n "${APP_TOKEN}" ]]; then
+            echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+            exit 0
+          fi
+          echo "::warning::GitHub App token unavailable; falling back to GITHUB_TOKEN."
+          echo "GH_TOKEN=${FALLBACK_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Checkout automation branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          ref: dev
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: 🧰 Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Validate GitHub CLI environment
+        run: bash .github/scripts/termux-validate-gh-env.sh
+
+      - name: Delete release branches after merged checkpoints
+        env:
+          CHECKPOINT_PR: ${{ inputs.checkpoint_pr }}
+          SOURCE_BRANCH: ${{ inputs.release_branch }}
+          CLEANUP_LIMIT: ${{ inputs.cleanup_limit || '100' }}
+        run: bash .github/scripts/termux-cleanup-release-branch.sh
