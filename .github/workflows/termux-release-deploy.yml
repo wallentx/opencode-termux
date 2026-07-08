@@ -209,3 +209,11 @@ jobs:
           CHECKPOINT_PR: ${{ steps.checkpoint-pr.outputs.pr_url }}
           SOURCE_BRANCH: ${{ steps.release-ref.outputs.branch }}
         run: bash "${TERMUX_AUTOMATION_DIR}/.github/scripts/termux-cleanup-release-branch.sh"
+
+      - name: Restore local action metadata
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p .github/actions
+          cp -a "${TERMUX_AUTOMATION_DIR}/.github/actions/build-android-cli" .github/actions/
+          cp -a "${TERMUX_AUTOMATION_DIR}/.github/actions/setup-bun" .github/actions/

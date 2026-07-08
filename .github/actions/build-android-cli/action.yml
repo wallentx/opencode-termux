@@ -17,9 +17,26 @@ runs:
     - uses: ./.github/actions/setup-bun
 
     - name: Setup Zig
-      uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
-      with:
-        version: 0.15.2
+      shell: bash
+      run: |
+        set -euo pipefail
+        zig_version=0.15.2
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) zig_target="x86_64-linux" ;;
+          Linux-ARM64) zig_target="aarch64-linux" ;;
+          *) echo "Unsupported Zig host: ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+        esac
+
+        zig_dir="${RUNNER_TOOL_CACHE:-${RUNNER_TEMP}}/zig/${zig_version}/${zig_target}"
+        if [[ ! -x "${zig_dir}/zig" ]]; then
+          archive="${RUNNER_TEMP}/zig-${zig_target}-${zig_version}.tar.xz"
+          mkdir -p "${zig_dir}"
+          curl -fsSL "https://ziglang.org/download/${zig_version}/zig-${zig_target}-${zig_version}.tar.xz" -o "${archive}"
+          tar -xJf "${archive}" -C "${zig_dir}" --strip-components=1
+        fi
+
+        echo "${zig_dir}" >> "${GITHUB_PATH}"
+        "${zig_dir}/zig" version
 
     - name: Install Bun build toolchain
       shell: bash
