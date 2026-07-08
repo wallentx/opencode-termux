@@ -28,8 +28,8 @@ jobs:
         ca-certificates
         coreutils
         file
-        python
         tar
+        util-linux
       copy-paths: |
         termux-smoke-artifact
       env: |
@@ -113,96 +113,25 @@ jobs:
 
         smoke_tui() {
           local name="$1"
+          local seconds="${OPENCODE_TUI_SMOKE_SECONDS:-8}"
+          local status
           shift
-          python - "$binary" "$name" "$@" <<'PY'
-        import os
-        import pty
-        import select
-        import subprocess
-        import sys
-        import time
 
-        binary = sys.argv[1]
-        name = sys.argv[2]
-        args = sys.argv[3:]
-        output_dir = os.environ["SMOKE_OUTPUT"]
-        log_path = os.path.join(output_dir, f"{name}.pty.log")
-        env = os.environ.copy()
-        env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
-        env.setdefault("TERM", "xterm-256color")
-        master, slave = pty.openpty()
-        start = time.monotonic()
-        proc = subprocess.Popen(
-            [binary, *args],
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
-            env=env,
-            close_fds=True,
-        )
-        os.close(slave)
-        survive_seconds = float(os.environ.get("OPENCODE_TUI_SMOKE_SECONDS", "8"))
-        deadline = start + survive_seconds
-        output = bytearray()
+          set +e
+          script -q -e -f \
+            -O "$SMOKE_OUTPUT/$name.pty.log" \
+            -- timeout -k 2s "${seconds}s" "$binary" "$@"
+          status="$?"
+          set -e
 
-        def drain():
-            while True:
-                ready, _, _ = select.select([master], [], [], 0)
-                if not ready:
-                    return
-                try:
-                    chunk = os.read(master, 4096)
-                except OSError:
-                    return
-                if not chunk:
-                    return
-                output.extend(chunk)
+          if [[ "$status" -eq 124 ]]; then
+            echo "$name survived ${seconds}s without abort"
+            return
+          fi
 
-        try:
-            while time.monotonic() < deadline:
-                ready, _, _ = select.select([master], [], [], 0.2)
-                if ready:
-                    try:
-                        chunk = os.read(master, 4096)
-                    except OSError:
-                        break
-                    if chunk:
-                        output.extend(chunk)
-                code = proc.poll()
-                if code is not None:
-                    drain()
-                    with open(log_path, "wb") as handle:
-                        handle.write(output)
-                    tail = bytes(output[-4000:]).decode("utf-8", "replace")
-                    print(tail, file=sys.stderr)
-                    raise SystemExit(f"{name} exited before {survive_seconds:.1f}s with code {code}")
-
-            if proc.poll() is not None:
-                drain()
-                with open(log_path, "wb") as handle:
-                    handle.write(output)
-                raise SystemExit(f"{name} exited before stable window with code {proc.returncode}")
-
-            os.write(master, b"\x03")
-            time.sleep(0.5)
-            if proc.poll() is None:
-                os.write(master, b"\x03")
-                time.sleep(0.5)
-            if proc.poll() is None:
-                proc.terminate()
-                time.sleep(0.5)
-            if proc.poll() is None:
-                proc.kill()
-            drain()
-            with open(log_path, "wb") as handle:
-                handle.write(output)
-            print(f"{name} survived {survive_seconds:.1f}s without abort")
-        finally:
-            try:
-                os.close(master)
-            except OSError:
-                pass
-        PY
+          echo "$name exited before ${seconds}s with status $status" >&2
+          tail -c 4000 "$SMOKE_OUTPUT/$name.pty.log" >&2 || true
+          exit 1
         }
 
         smoke_tui default --pure --print-logs --log-level DEBUG
