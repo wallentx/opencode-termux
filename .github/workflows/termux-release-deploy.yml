@@ -214,6 +214,10 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          if [[ ! -d "${TERMUX_AUTOMATION_DIR}/.github/actions" ]]; then
+            echo "Automation helpers were not checked out; skipping local action metadata restore."
+            exit 0
+          fi
           mkdir -p .github/actions
           cp -a "${TERMUX_AUTOMATION_DIR}/.github/actions/build-android-cli" .github/actions/
           cp -a "${TERMUX_AUTOMATION_DIR}/.github/actions/setup-bun" .github/actions/
