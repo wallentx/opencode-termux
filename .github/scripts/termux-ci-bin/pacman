@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+prefix="${PREFIX:-/data/data/com.termux/files/usr}"
+real_pacman="${TERMUX_REAL_PACMAN:-${prefix}/bin/pacman}"
+mirror="${TERMUX_PACMAN_MIRROR:-https://ftp.agdsn.de/termux-pacman}"
+mirrorlist="${prefix}/etc/pacman.d/mirrorlist"
+
+if [[ ! -x "$real_pacman" ]]; then
+  echo "Could not find real pacman at $real_pacman." >&2
+  exit 127
+fi
+
+if [[ -w "$mirrorlist" ]]; then
+  # shellcheck disable=SC2016
+  printf 'Server = %s/$repo/$arch\n' "$mirror" > "$mirrorlist"
+  echo "Using Termux pacman mirror: $mirror" >&2
+else
+  echo "Cannot update Termux pacman mirrorlist at $mirrorlist." >&2
+fi
+
+exec "$real_pacman" "$@"

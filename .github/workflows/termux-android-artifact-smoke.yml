@@ -36,6 +36,8 @@ jobs:
         ARTIFACT_NAME=${{ inputs.artifact_name }}
         ARTIFACT_RUN_ID=${{ inputs.artifact_run_id }}
         DOWNLOAD_DIR=termux-smoke-artifact
+        PATH=/workspace-src/.github/scripts/termux-ci-bin:/data/data/com.termux/files/usr/bin:/usr/bin:/bin
+        TERMUX_PACMAN_MIRROR=https://ftp.agdsn.de/termux-pacman
       host-commands: |
         set -Eeuo pipefail
 
