@@ -113,7 +113,7 @@ jobs:
         "$binary" --version | tee termux-smoke-output/version.txt
         "$binary" -h | tee termux-smoke-output/help.txt
         grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
-        "$strings_tool" -a "$binary" | grep -m 1 '@opentui+core@' | tee termux-smoke-output/opentui-version.txt
+        grep -m 1 '@opentui+core@' < <("$strings_tool" -a "$binary") | tee termux-smoke-output/opentui-version.txt
 
         export HOME="$PWD/termux-home"
         export OPENCODE_DISABLE_AUTOUPDATE=1
