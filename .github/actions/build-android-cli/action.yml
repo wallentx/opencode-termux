@@ -45,8 +45,29 @@ runs:
         sudo apt-get install -y --no-install-recommends wget gnupg software-properties-common ninja-build cmake file binutils
         wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
         chmod +x "$RUNNER_TEMP/llvm.sh"
-        sudo "$RUNNER_TEMP/llvm.sh" 21
-        sudo apt-get install -y --no-install-recommends clang-21 lld-21
+        for attempt in 1 2 3
+        do
+          if sudo "$RUNNER_TEMP/llvm.sh" 21; then
+            break
+          fi
+          if [[ "$attempt" -eq 3 ]]; then
+            exit 1
+          fi
+          echo "LLVM apt setup failed on attempt $attempt; retrying..." >&2
+          sudo rm -f /etc/apt/sources.list.d/*llvm* /etc/apt/sources.list.d/archive_uri-https_apt_llvm_org_noble_-noble.list
+          sleep $((attempt * 30))
+        done
+        for attempt in 1 2 3
+        do
+          if sudo apt-get update -o Acquire::Retries=5 && sudo apt-get install -y --no-install-recommends clang-21 lld-21; then
+            break
+          fi
+          if [[ "$attempt" -eq 3 ]]; then
+            exit 1
+          fi
+          echo "LLVM package install failed on attempt $attempt; retrying..." >&2
+          sleep $((attempt * 30))
+        done
         LLVM_RESOURCE_DIR="$(clang-21 -print-resource-dir)"
         NDK_PREBUILT="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
         NDK_CLANG_VERSION="$(ls "$NDK_PREBUILT/lib/clang" | sort -V | tail -n 1)"
