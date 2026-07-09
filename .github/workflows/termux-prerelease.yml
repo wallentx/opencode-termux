@@ -1,0 +1,207 @@
+name: termux-prerelease
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  artifact-metadata: read
+  attestations: read
+  checks: read
+  contents: write
+  deployments: read
+  discussions: read
+  id-token: none
+  issues: read
+  models: read
+  packages: read
+  pages: read
+  pull-requests: read
+  security-events: read
+  statuses: read
+
+concurrency:
+  group: termux-prerelease-${{ github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      artifact_name: ${{ steps.prerelease.outputs.artifact_name }}
+      release_tag: ${{ steps.prerelease.outputs.release_tag }}
+      build_version: ${{ steps.prerelease.outputs.build_version }}
+      source_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub App token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Checkout selected ref
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Resolve prerelease version
+        id: prerelease
+        run: |
+          set -euo pipefail
+          release_tag="${GH_NEXT_PATCH_PRERELEASE:?actions-toolbox did not set GH_NEXT_PATCH_PRERELEASE}"
+          if [[ ! "${release_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9.]+-termux$ ]]; then
+            echo "Unexpected Termux prerelease tag: ${release_tag}" >&2
+            exit 1
+          fi
+          build_version="${release_tag#v}"
+          artifact_name="opencode-android-arm64-${release_tag}"
+          {
+            echo "release_tag=${release_tag}"
+            echo "build_version=${build_version}"
+            echo "artifact_name=${artifact_name}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Building ${release_tag} from ${GITHUB_REF_NAME}."
+
+      - name: Resolve source SHA
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Build Android CLI
+        uses: ./.github/actions/build-android-cli
+        with:
+          version: ${{ steps.prerelease.outputs.build_version }}
+          release: ""
+          repo: ${{ github.repository }}
+
+      - name: Stage Android artifact
+        run: |
+          set -euo pipefail
+          mkdir -p prerelease
+          cp packages/opencode/dist/opencode-android-arm64.tar.gz prerelease/
+          sha256sum prerelease/opencode-android-arm64.tar.gz | tee prerelease/opencode-android-arm64.tar.gz.sha256
+
+      - name: Upload Android artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.prerelease.outputs.artifact_name }}
+          path: |
+            prerelease/opencode-android-arm64.tar.gz
+            prerelease/opencode-android-arm64.tar.gz.sha256
+            packages/opencode/dist/android-smoke
+
+  termux-smoke:
+    name: Smoke Android artifact in Termux
+    needs: build
+    if: github.repository == 'wallentx/opencode-termux'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/termux-android-artifact-smoke.yml
+    with:
+      artifact_name: ${{ needs.build.outputs.artifact_name }}
+      artifact_run_id: ${{ github.run_id }}
+
+  publish:
+    needs:
+      - build
+      - termux-smoke
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub App token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: echo "GH_TOKEN=${APP_TOKEN}" >> "${GITHUB_ENV}"
+
+      - name: Actions Toolbox
+        uses: wallentx/gh-actions/composite/actions-toolbox@main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          checkout: false
+
+      - name: Download Android artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: prerelease
+
+      - name: Publish Termux prerelease
+        env:
+          BUILD_VERSION: ${{ needs.build.outputs.build_version }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          test -f prerelease/opencode-android-arm64.tar.gz
+          test -f prerelease/opencode-android-arm64.tar.gz.sha256
+
+          notes="${RUNNER_TEMP}/termux-prerelease-notes.md"
+          {
+            echo "Termux prerelease build for ${RELEASE_TAG}."
+            echo
+            echo "- Branch: \`${GITHUB_REF_NAME}\`"
+            echo "- Source SHA: \`${SOURCE_SHA}\`"
+            echo "- Build version: \`${BUILD_VERSION}\`"
+            echo
+            echo "## Checks"
+            echo
+            echo "- Android artifact build completed"
+            echo "- Termux smoke workflow completed"
+            echo
+            echo "## Artifact"
+            echo
+            sed 's/^/- `/' prerelease/opencode-android-arm64.tar.gz.sha256 | sed 's/$/`/'
+          } > "${notes}"
+
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" \
+              prerelease/opencode-android-arm64.tar.gz#opencode-android-arm64.tar.gz \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+            gh release edit "${RELEASE_TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --target "${SOURCE_SHA}" \
+              --title "${RELEASE_TAG}" \
+              --notes-file "${notes}" \
+              --prerelease \
+              --latest=false
+            exit 0
+          fi
+
+          gh release create "${RELEASE_TAG}" \
+            prerelease/opencode-android-arm64.tar.gz#opencode-android-arm64.tar.gz \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${SOURCE_SHA}" \
+            --title "${RELEASE_TAG}" \
+            --notes-file "${notes}" \
+            --prerelease \
+            --latest=false
