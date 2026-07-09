@@ -92,10 +92,12 @@ jobs:
         fi
 
         binary="$(realpath "$binary")"
+        readelf_tool="$(command -v readelf || command -v greadelf)"
+        strings_tool="$(command -v strings || command -v gstrings)"
         file "$binary" | tee termux-smoke-output/file.txt
-        readelf -h "$binary" | tee termux-smoke-output/readelf-header.txt
-        readelf -l "$binary" | tee termux-smoke-output/readelf-program-headers.txt
-        readelf -d "$binary" | tee termux-smoke-output/readelf-dynamic.txt
+        "$readelf_tool" -h "$binary" | tee termux-smoke-output/readelf-header.txt
+        "$readelf_tool" -l "$binary" | tee termux-smoke-output/readelf-program-headers.txt
+        "$readelf_tool" -d "$binary" | tee termux-smoke-output/readelf-dynamic.txt
 
         grep -q "Machine:.*AArch64" termux-smoke-output/readelf-header.txt
         grep -q "Type:.*DYN" termux-smoke-output/readelf-header.txt
@@ -111,7 +113,7 @@ jobs:
         "$binary" --version | tee termux-smoke-output/version.txt
         "$binary" -h | tee termux-smoke-output/help.txt
         grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
-        strings -a "$binary" | grep -m 1 '@opentui+core@' | tee termux-smoke-output/opentui-version.txt
+        "$strings_tool" -a "$binary" | grep -m 1 '@opentui+core@' | tee termux-smoke-output/opentui-version.txt
 
         export HOME="$PWD/termux-home"
         export OPENCODE_DISABLE_AUTOUPDATE=1
