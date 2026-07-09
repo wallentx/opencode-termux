@@ -57,6 +57,15 @@ jobs:
           exit 1
         fi
         tar -tzf "$archive"
+
+        {
+          for package in core keymap solid
+          do
+            grep -Fq "\"@opentui/${package}\": \"0.3.4\"" package.json
+            grep -Fq "\"@opentui/${package}\": \"0.3.4\"" bun.lock
+            echo "@opentui/${package}=0.3.4"
+          done
+        } | tee "$DOWNLOAD_DIR/opentui-pin.txt"
       commands: |
         set -Eeuo pipefail
 
@@ -93,7 +102,6 @@ jobs:
 
         binary="$(realpath "$binary")"
         readelf_tool="$(command -v readelf || command -v greadelf)"
-        strings_tool="$(command -v strings || command -v gstrings)"
         file "$binary" | tee termux-smoke-output/file.txt
         "$readelf_tool" -h "$binary" | tee termux-smoke-output/readelf-header.txt
         "$readelf_tool" -l "$binary" | tee termux-smoke-output/readelf-program-headers.txt
@@ -113,10 +121,7 @@ jobs:
         "$binary" --version | tee termux-smoke-output/version.txt
         "$binary" -h | tee termux-smoke-output/help.txt
         grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
-        strings_output="opencode-smoke/opencode.strings"
-        "$strings_tool" -a "$binary" > "$strings_output"
-        grep -m 1 -E '(@opentui[+]core@0[.]3[.]4|opentui-0[.]3[.]4)' "$strings_output" | tee termux-smoke-output/opentui-version.txt
-        rm -f "$strings_output"
+        cp termux-smoke-artifact/opentui-pin.txt termux-smoke-output/opentui-pin.txt
 
         export HOME="$PWD/termux-home"
         export OPENCODE_DISABLE_AUTOUPDATE=1
