@@ -46,8 +46,15 @@ jobs:
           --name "$ARTIFACT_NAME" \
           --dir "$DOWNLOAD_DIR"
 
-        test -f "$DOWNLOAD_DIR/opencode-android-arm64.tar.gz"
-        tar -tzf "$DOWNLOAD_DIR/opencode-android-arm64.tar.gz"
+        archive="$(
+          find "$DOWNLOAD_DIR" -type f -name 'opencode-android-arm64.tar.gz' -print -quit
+        )"
+        if [[ -z "$archive" ]]; then
+          echo "Could not find opencode-android-arm64.tar.gz in $DOWNLOAD_DIR." >&2
+          find "$DOWNLOAD_DIR" -maxdepth 4 -type f -print >&2
+          exit 1
+        fi
+        tar -tzf "$archive"
       commands: |
         set -Eeuo pipefail
 

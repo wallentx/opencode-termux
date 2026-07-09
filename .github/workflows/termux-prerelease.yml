@@ -161,8 +161,17 @@ jobs:
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
         run: |
           set -euo pipefail
-          test -f prerelease/opencode-android-arm64.tar.gz
-          test -f prerelease/opencode-android-arm64.tar.gz.sha256
+          archive="$(
+            find prerelease -type f -name 'opencode-android-arm64.tar.gz' -print -quit
+          )"
+          checksum="$(
+            find prerelease -type f -name 'opencode-android-arm64.tar.gz.sha256' -print -quit
+          )"
+          if [[ -z "$archive" || -z "$checksum" ]]; then
+            echo "Could not find prerelease artifact files." >&2
+            find prerelease -maxdepth 4 -type f -print >&2
+            exit 1
+          fi
 
           notes="${RUNNER_TEMP}/termux-prerelease-notes.md"
           {
@@ -178,13 +187,12 @@ jobs:
             echo "- Termux smoke workflow completed"
             echo
             echo "## Artifact"
-            echo
-            sed 's/^/- `/' prerelease/opencode-android-arm64.tar.gz.sha256 | sed 's/$/`/'
+            sed 's/^/- `/' "$checksum" | sed 's/$/`/'
           } > "${notes}"
 
           if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release upload "${RELEASE_TAG}" \
-              prerelease/opencode-android-arm64.tar.gz#opencode-android-arm64.tar.gz \
+              "$archive#opencode-android-arm64.tar.gz" \
               --repo "${GITHUB_REPOSITORY}" \
               --clobber
             gh release edit "${RELEASE_TAG}" \
@@ -198,7 +206,7 @@ jobs:
           fi
 
           gh release create "${RELEASE_TAG}" \
-            prerelease/opencode-android-arm64.tar.gz#opencode-android-arm64.tar.gz \
+            "$archive#opencode-android-arm64.tar.gz" \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${SOURCE_SHA}" \
             --title "${RELEASE_TAG}" \
