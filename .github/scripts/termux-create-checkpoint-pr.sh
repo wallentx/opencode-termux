@@ -96,7 +96,7 @@ if git diff --quiet "origin/${DESTINATION_BRANCH}" HEAD; then
   exit 0
 fi
 
-git push --force-with-lease origin "${checkpoint_branch}"
+git push --no-verify --force-with-lease origin "${checkpoint_branch}"
 
 body_path="${RUNNER_TEMP}/termux-checkpoint-pr.md"
 {

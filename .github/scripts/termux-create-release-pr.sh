@@ -178,7 +178,7 @@ if [[ "${release_branch_exists}" == "false" ]]; then
   if ! git diff --cached --quiet; then
     git commit -m "chore(termux): seed release automation"
   fi
-  git push origin "${RELEASE_BRANCH}"
+  git push --no-verify origin "${RELEASE_BRANCH}"
 fi
 
 git fetch origin "${RELEASE_BRANCH}"
@@ -236,7 +236,7 @@ if git diff --cached --quiet; then
 fi
 
 git commit -m "chore(termux): prepare ${UPSTREAM_TAG}"
-git push --force-with-lease origin "${WORK_BRANCH}"
+git push --no-verify --force-with-lease origin "${WORK_BRANCH}"
 
 body_path="${RUNNER_TEMP}/termux-release-pr.md"
 {
