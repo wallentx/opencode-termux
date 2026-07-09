@@ -119,7 +119,11 @@ jobs:
         fi
 
         "$binary" --version | tee termux-smoke-output/version.txt
-        "$binary" -h | tee termux-smoke-output/help.txt
+        set +e
+        "$binary" -h 2>&1 | tee termux-smoke-output/help.txt
+        help_status="${PIPESTATUS[0]}"
+        set -e
+        echo "help status $help_status"
         grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
         {
           echo "@opentui/core=0.3.4"
