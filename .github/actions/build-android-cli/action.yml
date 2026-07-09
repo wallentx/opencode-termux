@@ -42,8 +42,18 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y --no-install-recommends wget gnupg software-properties-common ninja-build cmake file binutils
-        wget -qO "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+        sudo apt-get install -y --no-install-recommends curl wget gnupg software-properties-common ninja-build cmake file binutils
+        for attempt in 1 2 3
+        do
+          if curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 120 https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"; then
+            break
+          fi
+          if [[ "$attempt" -eq 3 ]]; then
+            exit 1
+          fi
+          echo "LLVM installer download failed on attempt $attempt; retrying..." >&2
+          sleep $((attempt * 30))
+        done
         chmod +x "$RUNNER_TEMP/llvm.sh"
         for attempt in 1 2 3
         do
