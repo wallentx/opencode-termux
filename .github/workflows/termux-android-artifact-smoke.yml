@@ -121,7 +121,11 @@ jobs:
         "$binary" --version | tee termux-smoke-output/version.txt
         "$binary" -h | tee termux-smoke-output/help.txt
         grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
-        cp termux-smoke-artifact/opentui-pin.txt termux-smoke-output/opentui-pin.txt
+        {
+          echo "@opentui/core=0.3.4"
+          echo "@opentui/keymap=0.3.4"
+          echo "@opentui/solid=0.3.4"
+        } | tee termux-smoke-output/opentui-pin.txt
 
         export HOME="$PWD/termux-home"
         export OPENCODE_DISABLE_AUTOUPDATE=1
@@ -136,12 +140,14 @@ jobs:
           local status
           shift
 
+          echo "starting $name tui smoke"
           set +e
           script -q -e -f \
             -O "$SMOKE_OUTPUT/$name.pty.log" \
             -- timeout -k 2s "${seconds}s" "$binary" "$@"
           status="$?"
           set -e
+          echo "$name tui smoke status $status"
 
           if [[ "$status" -eq 124 ]]; then
             echo "$name survived ${seconds}s without abort"
