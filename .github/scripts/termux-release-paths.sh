@@ -5,6 +5,7 @@ set -euo pipefail
 readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
   .github/actions/build-android-cli/action.yml
   .github/workflows/publish.yml
+  .github/workflows/test.yml
   .github/workflows/termux-release-branch-cleanup.yml
   .github/workflows/termux-release-checkpoint.yml
   .github/workflows/termux-release-deploy.yml

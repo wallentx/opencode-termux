@@ -79,6 +79,7 @@ function visit(dir) {
 }
 
 visit("packages")
+visit("sdks")
 NODE
 
   if command -v bun >/dev/null 2>&1; then
