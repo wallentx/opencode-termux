@@ -57,6 +57,14 @@ if ! git merge --no-ff --no-edit "${source_sha}"; then
       else
         git rm -f --ignore-unmatch "${conflicted_path}"
       fi
+    elif termux_is_checkpoint_source_wins_path "${conflicted_path}"; then
+      echo "Auto-resolving checkpoint conflict in ${conflicted_path} from ${source_branch}."
+      if git cat-file -e "${source_sha}:${conflicted_path}" 2>/dev/null; then
+        git checkout --theirs -- "${conflicted_path}"
+        git add "${conflicted_path}"
+      else
+        git rm -f --ignore-unmatch "${conflicted_path}"
+      fi
     fi
   done
 

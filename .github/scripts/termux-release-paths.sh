@@ -52,3 +52,12 @@ termux_path_in_list() {
 termux_is_checkpoint_release_only_path() {
   termux_path_in_list "$1" "${TERMUX_CHECKPOINT_RELEASE_ONLY_PATHS[@]}"
 }
+
+termux_is_checkpoint_source_wins_path() {
+  case "$1" in
+    bun.lock | packages/*/package.json | sdks/*/package.json)
+      return 0
+      ;;
+  esac
+  return 1
+}
