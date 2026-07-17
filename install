@@ -92,6 +92,12 @@ else
       arch="x64"
     fi
 
+    if [ "$os" = "linux" ] && [ "$arch" = "arm64" ]; then
+      if [ -n "${TERMUX_VERSION:-}" ] || [ "${PREFIX:-}" = "/data/data/com.termux/files/usr" ] || [ -d /data/data/com.termux/files/usr ]; then
+        os="android"
+      fi
+    fi
+
     if [ "$os" = "darwin" ] && [ "$arch" = "x64" ]; then
       rosetta_flag=$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)
       if [ "$rosetta_flag" = "1" ]; then
@@ -101,7 +107,7 @@ else
 
     combo="$os-$arch"
     case "$combo" in
-      linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
+      android-arm64|linux-x64|linux-arm64|darwin-x64|darwin-arm64|windows-x64)
         ;;
       *)
         echo -e "${RED}Unsupported OS/Arch: $os/$arch${NC}"
@@ -110,7 +116,7 @@ else
     esac
 
     archive_ext=".zip"
-    if [ "$os" = "linux" ]; then
+    if [ "$os" = "linux" ] || [ "$os" = "android" ]; then
       archive_ext=".tar.gz"
     fi
 
@@ -168,7 +174,7 @@ else
     filename="$APP-$target$archive_ext"
 
 
-    if [ "$os" = "linux" ]; then
+    if [ "$os" = "linux" ] || [ "$os" = "android" ]; then
         if ! command -v tar >/dev/null 2>&1; then
              echo -e "${RED}Error: 'tar' is required but not installed.${NC}"
              exit 1
@@ -274,7 +280,9 @@ download_with_progress() {
         exec 4>/dev/null
     fi
 
-    local tmp_dir=${TMPDIR:-/tmp}
+    local tmp_dir="${TMPDIR:-${PREFIX:+${PREFIX}/tmp}}"
+    tmp_dir="${tmp_dir:-/tmp}"
+    mkdir -p "$tmp_dir"
     local basename="${tmp_dir}/opencode_install_$$"
     local tracefile="${basename}.trace"
 
@@ -326,7 +334,9 @@ download_with_progress() {
 
 download_and_install() {
     print_message info "\n${MUTED}Installing ${NC}opencode ${MUTED}version: ${NC}$specific_version"
-    local tmp_dir="${TMPDIR:-/tmp}/opencode_install_$$"
+    local tmp_root="${TMPDIR:-${PREFIX:+${PREFIX}/tmp}}"
+    tmp_root="${tmp_root:-/tmp}"
+    local tmp_dir="${tmp_root}/opencode_install_$$"
     mkdir -p "$tmp_dir"
 
     if [[ "$os" == "windows" ]] || ! [ -t 2 ] || ! download_with_progress "$url" "$tmp_dir/$filename"; then
@@ -334,7 +344,7 @@ download_and_install() {
         curl -# -L -o "$tmp_dir/$filename" "$url"
     fi
 
-    if [ "$os" = "linux" ]; then
+    if [ "$os" = "linux" ] || [ "$os" = "android" ]; then
         tar -xzf "$tmp_dir/$filename" -C "$tmp_dir"
     else
         unzip -q "$tmp_dir/$filename" -d "$tmp_dir"
