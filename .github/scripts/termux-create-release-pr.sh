@@ -116,8 +116,11 @@ existing_open_release_pr() {
       '
 }
 
-enable_release_pr_automerge() {
+merge_release_pr_after_ci() {
   local pr_url="$1"
+  local ci_run_id=""
+  local details_url
+  local expected_head
   local pr_info
 
   if ! pr_info="$(gh pr view "${pr_url}" --repo "${GITHUB_REPOSITORY}" --json headRefOid,mergeStateStatus,mergeable,state,url)"; then
@@ -130,17 +133,40 @@ enable_release_pr_automerge() {
   fi
 
   if [[ "$(jq -r '.mergeable // ""' <<< "${pr_info}")" == "CONFLICTING" || "$(jq -r '.mergeStateStatus // ""' <<< "${pr_info}")" == "DIRTY" ]]; then
-    echo "Skipping auto-merge for ${pr_url}; GitHub reports conflicts."
+    echo "Skipping merge for ${pr_url}; GitHub reports conflicts."
     return 0
+  fi
+
+  expected_head="$(jq -r '.headRefOid' <<< "${pr_info}")"
+  for _ in $(seq 1 210); do
+    details_url="$(
+      gh pr view "${pr_url}" \
+        --repo "${GITHUB_REPOSITORY}" \
+        --json statusCheckRollup \
+        --jq '[.statusCheckRollup[]? | select(.workflowName == "termux-release-ci") | .detailsUrl] | map(select(. != null)) | .[0] // empty'
+    )"
+    ci_run_id="$(sed -n 's#.*\/actions\/runs\/\([0-9][0-9]*\).*#\1#p' <<< "${details_url}")"
+    [[ -z "${ci_run_id}" ]] || break
+    sleep 10
+  done
+
+  if [[ -z "${ci_run_id}" ]]; then
+    echo "Release CI did not start for ${pr_url}." >&2
+    return 1
+  fi
+
+  gh run watch "${ci_run_id}" --repo "${GITHUB_REPOSITORY}" --exit-status
+  pr_info="$(gh pr view "${pr_url}" --repo "${GITHUB_REPOSITORY}" --json headRefOid,mergeStateStatus,mergeable,state,url)"
+  if [[ "$(jq -r '.headRefOid' <<< "${pr_info}")" != "${expected_head}" ]]; then
+    echo "Release PR head changed while CI ran; refusing to merge stale result." >&2
+    return 1
   fi
 
   gh pr merge "${pr_url}" \
     --repo "${GITHUB_REPOSITORY}" \
     --squash \
-    --auto \
     --delete-branch \
-    --match-head-commit "$(jq -r '.headRefOid' <<< "${pr_info}")" \
-    || echo "::warning::Could not enable auto-merge for ${pr_url}."
+    --match-head-commit "${expected_head}"
 }
 
 append_pr_summary() {
@@ -251,7 +277,7 @@ body_path="${RUNNER_TEMP}/termux-release-pr.md"
   echo
   echo "This PR carries the Termux patch branch onto the upstream release tag. If GitHub reports conflicts, resolve them by keeping upstream release code and preserving the Termux compatibility fixes."
   echo
-  echo "After this PR merges, the Termux deploy workflow builds \`opencode-android-arm64\` under a GitHub Deployment, mirrors the release asset to \`${TERMUX_TAG}\`, and opens a checkpoint PR back to \`${PATCH_BRANCH}\`."
+  echo "This PR builds and smoke-tests \`opencode-android-arm64\` before merge. After merge, the deploy workflow verifies and promotes that exact artifact when its source tree matches, mirrors it to \`${TERMUX_TAG}\`, and opens a checkpoint PR back to \`${PATCH_BRANCH}\`."
   echo
   echo "## Upstream notes"
   echo
@@ -280,6 +306,6 @@ fi
 gh label create termux-release --repo "${GITHUB_REPOSITORY}" --color 0e8a16 --description "Termux release automation" --force
 gh label create release-train --repo "${GITHUB_REPOSITORY}" --color 1d76db --description "Release train PR" --force
 gh pr edit "${pr_url}" --repo "${GITHUB_REPOSITORY}" --add-label "termux-release" --add-label "release-train"
-enable_release_pr_automerge "${pr_url}"
+merge_release_pr_after_ci "${pr_url}"
 echo "pr_url=${pr_url}" >> "${GITHUB_OUTPUT}"
 append_pr_summary "${pr_action} release train PR" "${pr_url}"

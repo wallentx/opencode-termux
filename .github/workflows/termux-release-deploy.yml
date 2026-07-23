@@ -130,9 +130,18 @@ jobs:
           INPUT_PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
         run: bash "${TERMUX_AUTOMATION_DIR}/.github/scripts/termux-find-release-pr.sh"
 
+      - name: Find validated release PR artifact
+        id: pr-artifact
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        env:
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_HEAD_REF: ${{ steps.pr.outputs.head_ref }}
+        run: bash "${TERMUX_AUTOMATION_DIR}/.github/scripts/termux-find-pr-artifact.sh"
+
       - name: Create Android build deployment
         id: android-deployment
-        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true' && steps.pr-artifact.outputs.found != 'true'
         env:
           RELEASE_BRANCH: ${{ steps.release-ref.outputs.branch }}
           RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
@@ -141,7 +150,7 @@ jobs:
         run: bash "${TERMUX_AUTOMATION_DIR}/.github/scripts/termux-create-android-build-deployment.sh"
 
       - name: Build Android artifact
-        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true' && steps.pr-artifact.outputs.found != 'true'
         uses: ./.github/actions/build-android-cli
         with:
           version: ${{ steps.metadata.outputs.build_version }}
@@ -149,12 +158,43 @@ jobs:
           repo: ${{ github.repository }}
 
       - name: Promote built Android artifact
-        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true'
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true' && steps.pr-artifact.outputs.found != 'true'
         run: |
           set -euo pipefail
           mkdir -p promoted
           cp packages/opencode/dist/opencode-android-arm64.tar.gz promoted/
           sha256sum promoted/opencode-android-arm64.tar.gz
+
+      - name: Download validated release PR artifact
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true' && steps.pr-artifact.outputs.found == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          artifact-ids: ${{ steps.pr-artifact.outputs.artifact_id }}
+          github-token: ${{ steps.app-token.outputs.token }}
+          path: promoted
+
+      - name: Verify promoted release PR artifact
+        if: steps.metadata.outputs.deploy == 'true' && steps.metadata.outputs.asset_exists != 'true' && steps.pr-artifact.outputs.found == 'true'
+        env:
+          EXPECTED_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          EXPECTED_PR_NUMBER: ${{ steps.pr.outputs.number }}
+          RELEASE_SHA: ${{ steps.release-ref.outputs.sha }}
+        run: |
+          set -euo pipefail
+          expected_tree="$(git rev-parse "${RELEASE_SHA}^{tree}")"
+          jq -e \
+            --arg expected_head_sha "$EXPECTED_HEAD_SHA" \
+            --arg expected_pr_number "$EXPECTED_PR_NUMBER" \
+            --arg expected_tree "$expected_tree" \
+            '
+              .pr_head_sha == $expected_head_sha
+              and .pr_number == $expected_pr_number
+              and .source_tree == $expected_tree
+            ' promoted/provenance.json >/dev/null
+          (
+            cd promoted
+            sha256sum -c opencode-android-arm64.tar.gz.sha256
+          )
 
       - name: Finish Android build deployment
         if: always() && steps.android-deployment.outputs.deployment_id != ''

@@ -6,8 +6,10 @@ readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
   .github/actions/build-android-cli/action.yml
   .github/workflows/publish.yml
   .github/workflows/test.yml
+  .github/workflows/termux-android-artifact-smoke.yml
   .github/workflows/termux-release-branch-cleanup.yml
   .github/workflows/termux-release-checkpoint.yml
+  .github/workflows/termux-release-ci.yml
   .github/workflows/termux-release-deploy.yml
   .github/workflows/termux-release-watch.yml
 )
@@ -20,6 +22,7 @@ readonly -a TERMUX_RELEASE_SCRIPT_PATHS=(
   .github/scripts/termux-create-or-update-mirrored-release.sh
   .github/scripts/termux-create-release-pr.sh
   .github/scripts/termux-find-release-pr.sh
+  .github/scripts/termux-find-pr-artifact.sh
   .github/scripts/termux-finish-android-build-deployment.sh
   .github/scripts/termux-read-release-metadata.sh
   .github/scripts/termux-release-paths.sh
