@@ -49,7 +49,9 @@ const createEmbeddedWebUIBundle = async () => {
 }
 
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
-const treeSitterWorker = await Bun.file(fileURLToPath(import.meta.resolve("@opentui/core/parser.worker"))).text()
+const treeSitterWorker = await Bun.file(
+  path.join(path.dirname(fileURLToPath(import.meta.resolve("@opentui/core"))), "parser.worker.js"),
+).text()
 
 const allTargets: {
   os: "android" | "darwin" | "linux" | "win32"
