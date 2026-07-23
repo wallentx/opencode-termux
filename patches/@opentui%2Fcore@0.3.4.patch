@@ -1,0 +1,15 @@
+diff --git a/package.json b/package.json
+index 4689e3b..43cc5f9 100644
+--- a/package.json
++++ b/package.json
+@@ -42,8 +42,8 @@
+       "types": "./lib/tree-sitter/update-assets.d.ts"
+     },
+     "./parser.worker": {
+-      "import": "./lib/tree-sitter/parser.worker.js",
+-      "require": "./lib/tree-sitter/parser.worker.js",
++      "import": "./parser.worker.js",
++      "require": "./parser.worker.js",
+       "types": "./lib/tree-sitter/parser.worker.d.ts"
+     }
+   },
