@@ -83,6 +83,23 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/In
 
 export const use = serviceUse(Service)
 
+const UPSTREAM_RELEASE_REPO = "anomalyco/opencode"
+const TERMUX_RELEASE_REPO = "wallentx/opencode-termux"
+
+function releaseRepo() {
+  if (process.env.OPENCODE_RELEASE_REPO) return process.env.OPENCODE_RELEASE_REPO
+  if (process.platform === "android" || InstallationVersion.endsWith("-termux")) return TERMUX_RELEASE_REPO
+  return UPSTREAM_RELEASE_REPO
+}
+
+function installScriptUrl(target: string) {
+  if (process.env.OPENCODE_INSTALL_URL) return process.env.OPENCODE_INSTALL_URL
+  if (releaseRepo() === TERMUX_RELEASE_REPO) {
+    return `https://raw.githubusercontent.com/${TERMUX_RELEASE_REPO}/v${target}/install`
+  }
+  return "https://opencode.ai/install"
+}
+
 const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -144,14 +161,14 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
 
     const upgradeCurl = Effect.fnUntraced(
       function* (target: string) {
-        const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+        const response = yield* httpOk.execute(HttpClientRequest.get(installScriptUrl(target)))
         const body = yield* response.text
         const bodyBytes = new TextEncoder().encode(body)
         const shell = yield* upgradeScriptShell()
         const result = yield* appProcess.run(
           ChildProcess.make(shell, [], {
             stdin: Stream.make(bodyBytes),
-            env: { VERSION: target },
+            env: { VERSION: target, OPENCODE_RELEASE_REPO: releaseRepo() },
             extendEnv: true,
           }),
         )
@@ -173,6 +190,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
       }),
       method: Effect.fn("Installation.method")(function* () {
         if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
+        if (process.execPath.includes(path.join(".opencode", "opencode"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()
 
@@ -255,7 +273,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         }
 
         const response = yield* httpOk.execute(
-          HttpClientRequest.get("https://api.github.com/repos/anomalyco/opencode/releases/latest").pipe(
+          HttpClientRequest.get(`https://api.github.com/repos/${releaseRepo()}/releases/latest`).pipe(
             HttpClientRequest.acceptJson,
           ),
         )
