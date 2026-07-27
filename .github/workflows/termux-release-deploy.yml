@@ -171,6 +171,8 @@ jobs:
         with:
           artifact-ids: ${{ steps.pr-artifact.outputs.artifact_id }}
           github-token: ${{ steps.app-token.outputs.token }}
+          run-id: ${{ steps.pr-artifact.outputs.run_id }}
+          merge-multiple: true
           path: promoted
 
       - name: Verify promoted release PR artifact
