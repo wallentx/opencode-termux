@@ -1,5 +1,6 @@
 import { createMemo, createResource, createSignal, Show, type JSX } from "solid-js"
 import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { FileDiffInfo } from "@opencode-ai/client/promise"
 import {
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX,
   SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN,
@@ -30,7 +31,7 @@ import {
 import type { ReviewPanelV2State } from "@/pages/session/v2/review-panel-v2-state"
 import { applyFileListKeyDown, SessionFileListV2 } from "@/pages/session/v2/session-file-list-v2"
 
-type ReviewDiff = SnapshotFileDiff | VcsFileDiff
+type ReviewDiff = FileDiffInfo | SnapshotFileDiff | VcsFileDiff
 
 export type ReviewPanelV2Props = {
   title?: JSX.Element
@@ -200,6 +201,7 @@ function ReviewPanelV2Sidebar(props: {
   return (
     <SessionReviewV2Sidebar
       open={props.state.sidebarOpened()}
+      transition={props.state.sidebarTransition()}
       title={props.title}
       stats={<DiffChanges changes={props.diffs()} />}
       filter={props.state.filter()}
