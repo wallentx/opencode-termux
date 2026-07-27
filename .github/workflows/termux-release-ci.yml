@@ -1,0 +1,116 @@
+name: termux-release-ci
+
+on:
+  pull_request:
+    branches:
+      - "release-*"
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: termux-release-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build Android release artifact
+    if: github.repository == 'wallentx/opencode-termux' && startsWith(github.head_ref, 'termux-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+    steps:
+      - name: Checkout release PR merge
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Read release metadata
+        id: metadata
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          metadata=.github/termux-release.json
+          test -f "$metadata"
+          jq -e \
+            --arg base_ref "$BASE_REF" \
+            --arg head_ref "$HEAD_REF" \
+            '.release_branch == $base_ref and .work_branch == $head_ref and (.termux_tag | startswith("v") and endswith("-termux"))' \
+            "$metadata" >/dev/null
+
+          termux_tag="$(jq -r '.termux_tag' "$metadata")"
+          {
+            echo "artifact_name=opencode-android-arm64-pr-${PR_NUMBER}-${PR_HEAD_SHA}"
+            echo "build_version=${termux_tag#v}"
+            echo "source_tree=$(git rev-parse 'HEAD^{tree}')"
+            echo "termux_tag=${termux_tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build Android CLI
+        uses: ./.github/actions/build-android-cli
+        with:
+          version: ${{ steps.metadata.outputs.build_version }}
+          release: ""
+          repo: ${{ github.repository }}
+
+      - name: Stage Android release artifact
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SOURCE_TREE: ${{ steps.metadata.outputs.source_tree }}
+          TERMUX_TAG: ${{ steps.metadata.outputs.termux_tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-ci
+          cp packages/opencode/dist/opencode-android-arm64.tar.gz release-ci/
+          (
+            cd release-ci
+            sha256sum opencode-android-arm64.tar.gz > opencode-android-arm64.tar.gz.sha256
+          )
+          jq -n \
+            --arg pr_number "$PR_NUMBER" \
+            --arg pr_head_sha "$PR_HEAD_SHA" \
+            --arg source_tree "$SOURCE_TREE" \
+            --arg termux_tag "$TERMUX_TAG" \
+            '{
+              pr_number: $pr_number,
+              pr_head_sha: $pr_head_sha,
+              source_tree: $source_tree,
+              termux_tag: $termux_tag
+            }' > release-ci/provenance.json
+          cp -a packages/opencode/dist/android-smoke release-ci/
+
+      - name: Upload Android release artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          if-no-files-found: error
+          retention-days: 14
+          path: release-ci
+
+  termux-smoke:
+    name: Smoke Android release artifact in Termux
+    needs: build
+    if: github.repository == 'wallentx/opencode-termux'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/termux-android-artifact-smoke.yml
+    with:
+      artifact_name: ${{ needs.build.outputs.artifact_name }}
+      artifact_run_id: ${{ github.run_id }}
