@@ -100,6 +100,7 @@ delete_release_branch_if_unused() {
     return 0
   fi
 
+  echo "Deleting ${release_branch} at ${branch_sha} after merged checkpoint ${checkpoint_url}."
   gh api --silent --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${release_branch}"
   echo "Deleted ${release_branch} at ${branch_sha} after merged checkpoint ${checkpoint_url}."
   append_cleanup_summary "deleted" "${release_branch}" "checkpoint ${checkpoint_url} merged and no open PRs use the branch"
