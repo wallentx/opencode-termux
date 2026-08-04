@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - "release-*"
+      - termux-target
     types:
       - opened
       - reopened
@@ -25,18 +26,42 @@ defaults:
 jobs:
   build:
     name: Build Android release artifact
-    if: github.repository == 'wallentx/opencode-termux' && startsWith(github.head_ref, 'termux-')
+    if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
       artifact_name: ${{ steps.metadata.outputs.artifact_name }}
     steps:
+      - name: Classify Termux PR
+        id: pr
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$BASE_REF" == release-* && "$HEAD_REF" == termux-* ]]; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$BASE_REF" == "termux-target" && "$HEAD_REF" == checkpoint-* ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::Unexpected Termux PR shape: ${HEAD_REF} -> ${BASE_REF}"
+          exit 1
+
+      - name: Accept checkpoint without rebuilding
+        if: steps.pr.outputs.release != 'true'
+        run: echo "Checkpoint PR reuses the Android artifact already validated by its release PR."
+
       - name: Checkout release PR merge
+        if: steps.pr.outputs.release == 'true'
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Read release metadata
+        if: steps.pr.outputs.release == 'true'
         id: metadata
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -62,6 +87,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build Android CLI
+        if: steps.pr.outputs.release == 'true'
         uses: ./.github/actions/build-android-cli
         with:
           version: ${{ steps.metadata.outputs.build_version }}
@@ -69,6 +95,7 @@ jobs:
           repo: ${{ github.repository }}
 
       - name: Stage Android release artifact
+        if: steps.pr.outputs.release == 'true'
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -96,6 +123,7 @@ jobs:
           cp -a packages/opencode/dist/android-smoke release-ci/
 
       - name: Upload Android release artifact
+        if: steps.pr.outputs.release == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ steps.metadata.outputs.artifact_name }}
@@ -106,7 +134,7 @@ jobs:
   termux-smoke:
     name: Smoke Android release artifact in Termux
     needs: build
-    if: github.repository == 'wallentx/opencode-termux'
+    if: github.repository == 'wallentx/opencode-termux' && startsWith(github.base_ref, 'release-') && startsWith(github.head_ref, 'termux-')
     permissions:
       actions: read
       contents: read
