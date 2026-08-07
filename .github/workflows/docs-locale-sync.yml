@@ -11,7 +11,7 @@ jobs:
   sync-locales:
     if: false
     #if: github.actor != 'opencode-agent[bot]'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
@@ -26,6 +26,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Setup git committer
+        if: github.repository == 'anomalyco/opencode'
         id: committer
         uses: ./.github/actions/setup-git-committer
         with:
@@ -53,7 +54,7 @@ jobs:
         run: curl -fsSL https://opencode.ai/install | bash
 
       - name: Sync locale docs with OpenCode
-        if: steps.changes.outputs.has_changes == 'true'
+        if: github.repository == 'anomalyco/opencode' && (steps.changes.outputs.has_changes == 'true')
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_CONFIG_CONTENT: |
