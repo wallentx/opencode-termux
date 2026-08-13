@@ -1,0 +1,170 @@
+name: termux-android-artifact-smoke
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Name of the Actions artifact to download from artifact_run_id.
+        required: true
+        type: string
+      artifact_run_id:
+        description: Workflow run id containing artifact_name.
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  smoke:
+    name: Smoke opencode in Termux
+    uses: wallentx/gh-actions/.github/workflows/termux-run.yml@main
+    secrets:
+      github-token: ${{ github.token }}
+    with:
+      packages: |
+        binutils
+        ca-certificates
+        coreutils
+        file
+        tar
+        util-linux
+      copy-paths: |
+        termux-smoke-artifact
+      env: |
+        ARTIFACT_NAME=${{ inputs.artifact_name }}
+        ARTIFACT_RUN_ID=${{ inputs.artifact_run_id }}
+        DOWNLOAD_DIR=termux-smoke-artifact
+        PATH=/workspace-src/.github/scripts/termux-ci-bin:/data/data/com.termux/files/usr/bin:/usr/bin:/bin
+        TERMUX_PACMAN_MIRROR=https://ftp.agdsn.de/termux-pacman
+      host-commands: |
+        set -Eeuo pipefail
+
+        rm -rf "$DOWNLOAD_DIR"
+        mkdir -p "$DOWNLOAD_DIR"
+        gh run download "$ARTIFACT_RUN_ID" \
+          --repo "$GITHUB_REPOSITORY" \
+          --name "$ARTIFACT_NAME" \
+          --dir "$DOWNLOAD_DIR"
+
+        archive="$(
+          find "$DOWNLOAD_DIR" -type f -name 'opencode-android-arm64.tar.gz' -print -quit
+        )"
+        if [[ -z "$archive" ]]; then
+          echo "Could not find opencode-android-arm64.tar.gz in $DOWNLOAD_DIR." >&2
+          find "$DOWNLOAD_DIR" -maxdepth 4 -type f -print >&2
+          exit 1
+        fi
+        tar -tzf "$archive"
+
+        {
+          for package in core keymap solid
+          do
+            grep -Fq "\"@opentui/${package}\": \"0.3.4\"" package.json
+            grep -Fq "\"@opentui/${package}\": \"0.3.4\"" bun.lock
+            echo "@opentui/${package}=0.3.4"
+          done
+        } | tee "$DOWNLOAD_DIR/opentui-pin.txt"
+      commands: |
+        set -Eeuo pipefail
+
+        archive="$(
+          find termux-smoke-artifact -type f -name 'opencode-android-arm64.tar.gz' -print -quit
+        )"
+        if [[ -z "$archive" ]]; then
+          echo "Could not find opencode-android-arm64.tar.gz in termux-smoke-artifact." >&2
+          find termux-smoke-artifact -maxdepth 4 -type f -print >&2
+          exit 1
+        fi
+
+        rm -rf opencode-smoke termux-smoke-output termux-home smoke-project
+        mkdir -p opencode-smoke termux-smoke-output termux-home smoke-project
+        tar -xzf "$archive" -C opencode-smoke
+        find opencode-smoke -maxdepth 3 -type f -print | tee termux-smoke-output/files.txt
+
+        binary=""
+        for candidate in \
+          opencode-smoke/opencode \
+          opencode-smoke/bin/opencode \
+          opencode-smoke/opencode-android-arm64/bin/opencode
+        do
+          if [[ -x "$candidate" ]]; then
+            binary="$candidate"
+            break
+          fi
+        done
+
+        if [[ -z "$binary" ]]; then
+          echo "Could not find executable opencode in $archive." >&2
+          exit 1
+        fi
+
+        binary="$(realpath "$binary")"
+        readelf_tool="$(command -v readelf || command -v greadelf)"
+        file "$binary" | tee termux-smoke-output/file.txt
+        "$readelf_tool" -h "$binary" | tee termux-smoke-output/readelf-header.txt
+        "$readelf_tool" -l "$binary" | tee termux-smoke-output/readelf-program-headers.txt
+        "$readelf_tool" -d "$binary" | tee termux-smoke-output/readelf-dynamic.txt
+
+        grep -q "Machine:.*AArch64" termux-smoke-output/readelf-header.txt
+        grep -q "Type:.*DYN" termux-smoke-output/readelf-header.txt
+        if grep -E "Requesting program interpreter: .*(ld-linux|ld-musl)" termux-smoke-output/readelf-program-headers.txt; then
+          echo "Android artifact unexpectedly references a Linux ELF interpreter." >&2
+          exit 1
+        fi
+        if grep -E "Shared library: \[(libc\.so\.6|ld-linux|ld-musl)" termux-smoke-output/readelf-dynamic.txt; then
+          echo "Android artifact unexpectedly links Linux libc/runtime libraries." >&2
+          exit 1
+        fi
+
+        "$binary" --version | tee termux-smoke-output/version.txt
+        set +e
+        "$binary" -h 2>&1 | tee termux-smoke-output/help.txt
+        help_status="${PIPESTATUS[0]}"
+        set -e
+        echo "help status $help_status"
+        grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
+        {
+          echo "@opentui/core=0.3.4"
+          echo "@opentui/keymap=0.3.4"
+          echo "@opentui/solid=0.3.4"
+        } | tee termux-smoke-output/opentui-pin.txt
+
+        export HOME="$PWD/termux-home"
+        export OPENCODE_DISABLE_AUTOUPDATE=1
+        export TERM=xterm-256color
+        export SMOKE_OUTPUT="$PWD/termux-smoke-output"
+
+        cd smoke-project
+
+        smoke_tui() {
+          local name="$1"
+          local seconds="${OPENCODE_TUI_SMOKE_SECONDS:-8}"
+          local status
+          shift
+
+          echo "starting $name tui smoke"
+          set +e
+          script -q -e -f \
+            -O "$SMOKE_OUTPUT/$name.pty.log" \
+            -- timeout -k 2s "${seconds}s" "$binary" "$@"
+          status="$?"
+          set -e
+          echo "$name tui smoke status $status"
+
+          if [[ "$status" -eq 124 ]]; then
+            echo "$name survived ${seconds}s without abort"
+            return
+          fi
+
+          echo "$name exited before ${seconds}s with status $status" >&2
+          tail -c 4000 "$SMOKE_OUTPUT/$name.pty.log" >&2 || true
+          exit 1
+        }
+
+        smoke_tui default --pure --print-logs --log-level DEBUG
+        smoke_tui mini --mini --demo --pure --print-logs --log-level DEBUG
+      sync-back-paths: |
+        termux-smoke-output
+      upload-artifact-name: opencode-android-arm64-termux-smoke-${{ inputs.artifact_run_id }}
