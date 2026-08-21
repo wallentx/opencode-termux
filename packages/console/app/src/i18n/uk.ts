@@ -255,7 +255,7 @@ export const dict = {
   "zen.privacy.exceptionsLink": "такими винятками",
 
   "go.title": "OpenCode Go | Недорогі моделі кодування для всіх",
-  "go.banner.text": "Hy3 отримує 8x ліміти використання протягом обмеженого часу",
+  "go.banner.text": "Ox Alpha Free доступна в Go протягом обмеженого часу",
   "go.meta.description":
     "Go починається від $5 за перший місяць, потім $10/місяць, зі щедрими лімітами використання та надійним доступом до провідних моделей для кодування.",
   "go.hero.title": "Недорогі моделі кодування для всіх",
@@ -273,7 +273,8 @@ export const dict = {
   "go.graph.freePill": "Big Pickle та безкоштовні моделі",
   "go.graph.go": "Go",
   "go.graph.label": "Запитів за 5 годин",
-  "go.graph.limitedRegions": "(обмежені регіони)",
+  "go.graph.limitedRegions": "обмежені регіони",
+  "go.graph.limitedTime": "обмежений час",
   "go.graph.usageLimits": "Ліміти використання",
   "go.graph.aria": "Запитів за 5 год: {{free}} vs {{go}}",
 
