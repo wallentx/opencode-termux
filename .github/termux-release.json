@@ -1,0 +1,15 @@
+{
+  "upstream_repo": "anomalyco/opencode",
+  "upstream_tag": "v1.18.20",
+  "upstream_name": "v1.18.20",
+  "upstream_html_url": "https://github.com/anomalyco/opencode/releases/tag/v1.18.20",
+  "upstream_target": "35fe5b7212d6cd69308d4006048740a351d27a52",
+  "upstream_release_id": "374241794",
+  "upstream_prerelease": false,
+  "release_train": "1.18.20",
+  "release_branch": "release-1.18.20",
+  "work_branch": "termux-1.18.20",
+  "patch_branch": "termux-target",
+  "patch_source_sha": "4af4d4f94a8d7128a655f7c9f706c9ca3a208624",
+  "termux_tag": "v1.18.20-termux"
+}
