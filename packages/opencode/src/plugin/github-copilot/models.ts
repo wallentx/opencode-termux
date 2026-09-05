@@ -88,6 +88,9 @@ function build(key: string, remote: SelectableItem, url: string, prev?: Model): 
   const image =
     (remote.capabilities.supports.vision ?? false) ||
     (remote.capabilities.limits.vision?.supported_media_types ?? []).some((item) => item.startsWith("image/"))
+  const pdf =
+    (remote.capabilities.supports.vision ?? false) &&
+    (remote.capabilities.limits.vision?.supported_media_types?.includes("application/pdf") ?? false)
 
   const isMsgApi = remote.supported_endpoints?.includes("/v1/messages")
   const endpoint: CopilotEndpoint | undefined = isMsgApi
@@ -99,7 +102,7 @@ function build(key: string, remote: SelectableItem, url: string, prev?: Model): 
         : undefined
   const prices = remote.billing?.token_prices
   // Copilot prices are AIC per billing batch; OpenCode stores USD per million tokens.
-  const usdPerMillion = prices ? 10_000 / prices.batch_size : 0
+  const usdPerMillion = prices && prices.batch_size > 0 ? 10_000 / prices.batch_size : 0
 
   const model: CopilotModel = {
     id: key,
@@ -127,7 +130,7 @@ function build(key: string, remote: SelectableItem, url: string, prev?: Model): 
         audio: false,
         image,
         video: false,
-        pdf: false,
+        pdf,
       },
       output: {
         text: true,
