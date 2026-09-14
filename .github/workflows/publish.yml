@@ -411,14 +411,15 @@ jobs:
       - build-cli
       - sign-cli-windows
       - build-electron
-    if: always() && !failure() && !cancelled()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: github.repository == 'anomalyco/opencode' && (always() && !failure() && !cancelled())
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
 
       - uses: ./.github/actions/setup-bun
 
       - name: Login to GitHub Container Registry
+        if: github.repository == 'anomalyco/opencode'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
@@ -470,6 +471,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup git committer
+        if: github.repository == 'anomalyco/opencode'
         id: committer
         uses: ./.github/actions/setup-git-committer
         with:
@@ -485,6 +487,7 @@ jobs:
             ${{ runner.os }}-apt-aur-
 
       - name: Setup SSH for AUR
+        if: github.repository == 'anomalyco/opencode'
         run: |
           sudo apt-get update
           sudo apt-get install -y pacman-package-manager
@@ -496,7 +499,7 @@ jobs:
           ssh-keyscan -H aur.archlinux.org >> ~/.ssh/known_hosts || true
 
       - name: Upload desktop release assets
-        if: needs.version.outputs.release
+        if: github.repository == 'anomalyco/opencode' && (needs.version.outputs.release)
         env:
           GH_TOKEN: ${{ steps.committer.outputs.token }}
         run: |
@@ -509,6 +512,7 @@ jobs:
           gh release upload "v${{ needs.version.outputs.version }}" "${files[@]}" --clobber --repo "${{ needs.version.outputs.repo }}"
 
       - run: ./script/publish.ts
+        if: github.repository == 'anomalyco/opencode'
         env:
           OPENCODE_VERSION: ${{ needs.version.outputs.version }}
           OPENCODE_RELEASE: ${{ needs.version.outputs.release }}
