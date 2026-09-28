@@ -23,6 +23,13 @@ env:
 jobs:
   unit:
     name: unit (${{ matrix.settings.name }})
+    if: |
+      !(
+        github.event_name == 'pull_request' &&
+        github.repository == 'wallentx/opencode-termux' &&
+        (github.base_ref == 'upstream-dev' || startsWith(github.base_ref, 'release-')) &&
+        (github.head_ref == 'termux-target' || startsWith(github.head_ref, 'termux-'))
+      )
     strategy:
       fail-fast: false
       matrix:
@@ -31,7 +38,7 @@ jobs:
             host: blacksmith-4vcpu-ubuntu-2404
           - name: windows
             host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && (matrix.settings.host) || 'ubuntu-latest' }}
     defaults:
       run:
         shell: bash
@@ -81,6 +88,13 @@ jobs:
 
   e2e:
     name: e2e (${{ matrix.settings.name }})
+    if: |
+      !(
+        github.event_name == 'pull_request' &&
+        github.repository == 'wallentx/opencode-termux' &&
+        (github.base_ref == 'upstream-dev' || startsWith(github.base_ref, 'release-')) &&
+        (github.head_ref == 'termux-target' || startsWith(github.head_ref, 'termux-'))
+      )
     strategy:
       fail-fast: false
       matrix:
@@ -89,7 +103,7 @@ jobs:
             host: blacksmith-4vcpu-ubuntu-2404
           - name: windows
             host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && (matrix.settings.host) || 'ubuntu-latest' }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:
