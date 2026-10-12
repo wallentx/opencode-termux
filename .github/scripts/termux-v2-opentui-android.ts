@@ -4,12 +4,18 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v2-pthread"
+const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v3-render-thread"
 if (process.argv[2] === "--patch-only") {
   const file = process.argv[3]
   if (!file) throw new Error("Usage: opentui-android.ts --patch-only <build.zig>")
   patchOpenTUIBuild(path.resolve(file))
   if (process.argv[4]) patchOpenTUIClipboard(path.resolve(process.argv[4]))
+  process.exit(0)
+}
+if (process.argv[2] === "--runtime-only") {
+  const directory = process.argv[3]
+  if (!directory) throw new Error("Usage: opentui-android.ts --runtime-only <core-directory>")
+  patchOpenTUIRuntime(path.resolve(directory))
   process.exit(0)
 }
 
@@ -124,31 +130,45 @@ await Bun.write(
 const license = path.join(source, "LICENSE")
 if (fs.existsSync(license)) fs.copyFileSync(license, path.join(native, "LICENSE"))
 
-let descriptors = 0
-let loaders = 0
-for (const file of fs.readdirSync(core)) {
-  if (!file.endsWith(".js")) continue
+patchOpenTUIRuntime(core)
 
-  const target = path.join(core, file)
-  const original = fs.readFileSync(target, "utf8")
-  if (original.includes("./android-arm64/index.bun.js")) continue
+function patchOpenTUIRuntime(directory: string) {
+  let descriptorFound = false
+  let loaderFound = false
+  let threadPolicyFound = false
+  for (const file of fs.readdirSync(directory)) {
+    if (!file.endsWith(".js")) continue
 
-  const withDescriptor = original.replace(
-    `var NATIVE_FILE_NAMES = {\n  darwin:`,
-    `var NATIVE_FILE_NAMES = {\n  android: "libopentui.so",\n  darwin:`,
-  )
-  if (withDescriptor !== original) descriptors++
+    const target = path.join(directory, file)
+    const original = fs.readFileSync(target, "utf8")
+    const withDescriptor = original.includes(`android: "libopentui.so"`)
+      ? original
+      : original.replace(
+          `var NATIVE_FILE_NAMES = {\n  darwin:`,
+          `var NATIVE_FILE_NAMES = {\n  android: "libopentui.so",\n  darwin:`,
+        )
+    const withLoader = withDescriptor.includes("./android-arm64/index.bun.js")
+      ? withDescriptor
+      : withDescriptor.replace(
+          `  if (process.platform === "darwin") {`,
+          `  if (process.platform === "android" && process.arch === "arm64") {\n    return (await import("./android-arm64/index.bun.js")).default;\n  }\n  if (process.platform === "darwin") {`,
+        )
+    const patched = withLoader.includes(`process.platform === "linux" || process.platform === "android"`)
+      ? withLoader
+      : withLoader.replace(
+          `    if (process.platform === "linux")\n      config.useThread = false;`,
+          `    if (process.platform === "linux" || process.platform === "android")\n      config.useThread = false;`,
+        )
+    descriptorFound ||= patched.includes(`android: "libopentui.so"`)
+    loaderFound ||= patched.includes("./android-arm64/index.bun.js")
+    threadPolicyFound ||= patched.includes(`process.platform === "linux" || process.platform === "android"`)
+    if (patched !== original) fs.writeFileSync(target, patched)
+  }
 
-  const patched = withDescriptor.replace(
-    `  if (process.platform === "darwin") {`,
-    `  if (process.platform === "android" && process.arch === "arm64") {\n    return (await import("./android-arm64/index.bun.js")).default;\n  }\n  if (process.platform === "darwin") {`,
-  )
-  if (patched !== withDescriptor) loaders++
-  if (patched !== original) fs.writeFileSync(target, patched)
-}
-
-if (descriptors === 0 || loaders === 0) {
-  throw new Error(`Did not patch @opentui/core Android runtime assets: descriptors=${descriptors}, loaders=${loaders}`)
+  if (!descriptorFound || !loaderFound || !threadPolicyFound)
+    throw new Error(
+      `Did not patch @opentui/core Android runtime: descriptor=${descriptorFound}, loader=${loaderFound}, thread=${threadPolicyFound}`,
+    )
 }
 
 function androidNdk() {
