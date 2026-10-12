@@ -26,6 +26,7 @@ readonly -a TERMUX_RELEASE_SCRIPT_PATHS=(
   .github/scripts/termux-finish-android-build-deployment.sh
   .github/scripts/termux-read-release-metadata.sh
   .github/scripts/termux-release-paths.sh
+  .github/scripts/termux-resolve-release-conflicts.sh
   .github/scripts/termux-resolve-release-ref.sh
   .github/scripts/termux-select-release.sh
   .github/scripts/termux-validate-gh-env.sh
