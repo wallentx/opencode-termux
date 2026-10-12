@@ -7,6 +7,29 @@ const root = path.resolve(process.argv[2] ?? ".")
 const buildFile = path.join(root, "packages/cli/script/build.ts")
 const marker = "opencode-termux-v2-android"
 let source = await readFile(buildFile, "utf8")
+const serverFile = path.join(root, "packages/cli/src/services/server-connection.ts")
+const serverMarker = "opencode-termux-android-standalone"
+let serverSource = await readFile(serverFile, "utf8")
+
+if (!serverSource.includes(serverMarker)) {
+  const before = `  if (args.server !== undefined && args.standalone)
+    return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
+  if (args.server !== undefined) {`
+  const after = `  if (args.server !== undefined && args.standalone)
+    return yield* Effect.fail(new Error("--server and --standalone cannot be combined"))
+  // ${serverMarker}
+  const standalone = args.standalone || (process.platform === "android" && args.server === undefined)
+  if (args.server !== undefined) {`
+  const standaloneBefore = `  if (args.standalone || (yield* ServiceConfig.read()).disabled === true) {`
+  if (!serverSource.includes(before)) throw new Error("Cannot patch Android standalone server selection")
+  if (!serverSource.includes(standaloneBefore)) throw new Error("Cannot patch Android standalone server startup")
+  serverSource = serverSource.replace(before, after)
+  serverSource = serverSource.replace(
+    standaloneBefore,
+    `  if (standalone || (yield* ServiceConfig.read()).disabled === true) {`,
+  )
+  await writeFile(serverFile, serverSource)
+}
 
 if (source.includes(marker)) {
   console.log(`V2 Android build patch already applied to ${buildFile}`)
