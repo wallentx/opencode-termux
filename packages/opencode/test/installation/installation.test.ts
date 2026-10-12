@@ -86,6 +86,27 @@ describe("installation", () => {
         }),
     )
 
+    const forkReleaseCalls: string[] = []
+    testEffect(
+      testLayer((request) => {
+        forkReleaseCalls.push(request.url)
+        return jsonResponse({ tag_name: "v1.17.15-termux" })
+      }),
+    ).effect("reads configured fork release versions", () =>
+      Effect.gen(function* () {
+        const original = process.env.OPENCODE_RELEASE_REPO
+        process.env.OPENCODE_RELEASE_REPO = "wallentx/opencode-termux"
+        try {
+          const result = yield* Installation.use.latest("curl")
+          expect(result).toBe("1.17.15-termux")
+          expect(forkReleaseCalls).toContain("https://api.github.com/repos/wallentx/opencode-termux/releases/latest")
+        } finally {
+          if (original === undefined) delete process.env.OPENCODE_RELEASE_REPO
+          else process.env.OPENCODE_RELEASE_REPO = original
+        }
+      }),
+    )
+
     const npmCalls: string[] = []
     testEffect(
       testLayer((request) => {
@@ -234,6 +255,37 @@ describe("installation", () => {
     ).effect("falls back to sh when bash is unavailable during curl upgrade", () =>
       Effect.gen(function* () {
         yield* Installation.use.upgrade("curl", "9.9.9")
+      }),
+    )
+
+    const installCalls: string[] = []
+    testEffect(
+      testLayer(
+        (request) => {
+          installCalls.push(request.url)
+          return new Response("install script", { status: 200 })
+        },
+        (cmd, args) => {
+          if (cmd === "bash" && args[0] === "--version") return "GNU bash"
+          if (cmd === "bash") return "ok"
+          return ""
+        },
+      ),
+    ).effect("uses configured install URL for curl upgrade", () =>
+      Effect.gen(function* () {
+        const originalUrl = process.env.OPENCODE_INSTALL_URL
+        const originalRepo = process.env.OPENCODE_RELEASE_REPO
+        process.env.OPENCODE_INSTALL_URL = "https://example.test/install"
+        process.env.OPENCODE_RELEASE_REPO = "wallentx/opencode-termux"
+        try {
+          yield* Installation.use.upgrade("curl", "1.17.15-termux")
+          expect(installCalls).toContain("https://example.test/install")
+        } finally {
+          if (originalUrl === undefined) delete process.env.OPENCODE_INSTALL_URL
+          else process.env.OPENCODE_INSTALL_URL = originalUrl
+          if (originalRepo === undefined) delete process.env.OPENCODE_RELEASE_REPO
+          else process.env.OPENCODE_RELEASE_REPO = originalRepo
+        }
       }),
     )
   })

@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url)
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8"))
 
 const platformMap = {
+  android: "android",
   darwin: "darwin",
   linux: "linux",
   win32: "windows",
@@ -95,6 +96,8 @@ function isMusl() {
 
 function packageNames() {
   const baseline = arch === "x64" && !supportsAvx2()
+
+  if (platform === "android") return [base]
 
   if (platform === "linux") {
     if (isMusl()) {
