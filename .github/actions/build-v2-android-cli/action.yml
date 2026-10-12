@@ -32,7 +32,12 @@ runs:
 
     - name: Test V2 Android patcher
       shell: bash
-      run: bun test .github/scripts/termux-v2-opentui-android.test.ts
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        cd "$SOURCE_DIR/packages/cli"
+        bun test ../../../.github/scripts/termux-v2-opentui-android.test.ts
 
     - name: Install upstream dependencies
       shell: bash
