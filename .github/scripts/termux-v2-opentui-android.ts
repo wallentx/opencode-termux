@@ -51,7 +51,7 @@ await Bun.write(
 
 patchOpenTUIBuild(path.join(source, "packages/native/build.zig"))
 await $`sh scripts/prepare-zig-deps.sh`.cwd(path.join(source, "packages/native"))
-await $`OPENCODE_ANDROID_NDK_LIBDIR=${ndk.libDir} zig build -Dlibrary-target=aarch64-linux-android -Doptimize=ReleaseFast --libc ${libc}`.cwd(
+await $`zig build -Dlibrary-target=aarch64-linux-android -Dandroid-lib-dir=${ndk.libDir} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
   path.join(source, "packages/native"),
 )
 
@@ -200,7 +200,7 @@ function androidNdk() {
 }
 
 function patchOpenTUIBuild(file: string) {
-  const marker = "OPENCODE_ANDROID_NDK_LIBDIR"
+  const marker = "android-lib-dir"
   const original = fs.readFileSync(file, "utf8")
   if (original.includes(marker)) return
 
@@ -211,7 +211,7 @@ function patchOpenTUIBuild(file: string) {
         },`
   const after = `        .linux => {
             if (target.result.abi == .android) {
-                if (b.graph.env_map.get("${marker}")) |lib_path| {
+                if (b.option([]const u8, "${marker}", "Android NDK library directory")) |lib_path| {
                     module.addLibraryPath(.{ .cwd_relative = lib_path });
                 }
                 module.linkSystemLibrary("dl", .{});
