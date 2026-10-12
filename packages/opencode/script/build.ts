@@ -225,6 +225,12 @@ for (const item of targets) {
     },
   })
 
+  // Embedding the bundle invalidates the linker's ad-hoc signature, and macOS 27+
+  // SIGKILLs binaries with invalid pages. Re-sign ad-hoc; release CI re-signs with Developer ID.
+  if (item.os === "darwin" && process.platform === "darwin") {
+    await $`codesign --force --sign - dist/${name}/bin/opencode`
+  }
+
   if (item.os === "android") {
     const androidElf = await import("./patch-android-elf.ts")
     await androidElf.patchAndroidElf(`dist/${name}/bin/opencode`)
