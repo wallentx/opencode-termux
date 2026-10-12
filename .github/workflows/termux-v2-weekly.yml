@@ -11,7 +11,6 @@ on:
       - .github/scripts/termux-v2-opentui-android.test.ts
       - .github/workflows/termux-android-artifact-smoke.yml
       - .github/workflows/termux-v2-weekly.yml
-      - packages/opencode/script/patch-android-elf.ts
   schedule:
     - cron: "17 9 * * 1"
   workflow_dispatch:

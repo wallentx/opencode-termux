@@ -91,26 +91,9 @@ replace(
     conditions: item.os === "android" ? ["android", "bun", "node"] : ["bun", "node"],`,
 )
 
-replace(
-  `  verifySimulationGraph(simulationInputs)
-
-  await Bun.write(`,
-  `  verifySimulationGraph(simulationInputs)
-  if (item.os === "android") {
-    const { patchAndroidElf } = await import("./patch-android-elf")
-    await patchAndroidElf(path.join(outdir, name, "bin", binary))
-  }
-
-  await Bun.write(`,
-)
-
 await writeFile(buildFile, source)
 await copyFile(
   path.resolve(import.meta.dirname, "termux-v2-opentui-android.ts"),
   path.join(root, "packages/cli/script/opentui-android.ts"),
-)
-await copyFile(
-  path.resolve(import.meta.dirname, "../../packages/opencode/script/patch-android-elf.ts"),
-  path.join(root, "packages/cli/script/patch-android-elf.ts"),
 )
 console.log(`Applied V2 Android build patch to ${buildFile}`)
