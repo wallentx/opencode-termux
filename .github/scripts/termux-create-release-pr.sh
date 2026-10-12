@@ -116,6 +116,24 @@ existing_open_release_pr() {
       '
 }
 
+merge_release_branch() {
+  if git merge-base --is-ancestor "origin/${RELEASE_BRANCH}" HEAD; then
+    return 0
+  fi
+
+  if ! git merge --no-ff --no-commit "origin/${RELEASE_BRANCH}"; then
+    bash "${script_dir}/termux-resolve-release-conflicts.sh"
+  fi
+
+  if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
+    echo "::error::Release merge still has unresolved conflicts:" >&2
+    git diff --name-only --diff-filter=U >&2
+    return 1
+  fi
+
+  git commit -m "chore(termux): merge ${UPSTREAM_TAG} release"
+}
+
 merge_release_pr_after_ci() {
   local pr_url="$1"
   local ci_run_id=""
@@ -133,8 +151,8 @@ merge_release_pr_after_ci() {
   fi
 
   if [[ "$(jq -r '.mergeable // ""' <<< "${pr_info}")" == "CONFLICTING" || "$(jq -r '.mergeStateStatus // ""' <<< "${pr_info}")" == "DIRTY" ]]; then
-    echo "Skipping merge for ${pr_url}; GitHub reports conflicts."
-    return 0
+    echo "::error::${pr_url} still has conflicts after automated release-branch merging." >&2
+    return 1
   fi
 
   expected_head="$(jq -r '.headRefOid' <<< "${pr_info}")"
@@ -256,13 +274,18 @@ jq -n \
   }' > .github/termux-release.json
 
 git add -A
-if git diff --cached --quiet; then
+if ! git diff --cached --quiet; then
+  git commit -m "chore(termux): prepare ${UPSTREAM_TAG}"
+fi
+
+merge_release_branch
+
+if [[ -z "${existing_pr}" ]] && git diff --quiet "origin/${RELEASE_BRANCH}" HEAD; then
   echo "No changes to propose for ${UPSTREAM_TAG}."
   append_pr_summary "no changes to propose"
   exit 0
 fi
 
-git commit -m "chore(termux): prepare ${UPSTREAM_TAG}"
 git push --no-verify --force-with-lease origin "${WORK_BRANCH}"
 
 body_path="${RUNNER_TEMP}/termux-release-pr.md"
