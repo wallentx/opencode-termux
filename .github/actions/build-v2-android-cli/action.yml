@@ -30,15 +30,6 @@ runs:
       with:
         bun-version: ${{ steps.bun.outputs.version }}
 
-    - name: Test V2 Android patcher
-      shell: bash
-      env:
-        SOURCE_DIR: ${{ inputs.source-dir }}
-      run: |
-        set -euo pipefail
-        cd "$SOURCE_DIR/packages/cli"
-        bun test ../../../.github/scripts/termux-v2-opentui-android.test.ts
-
     - name: Install upstream dependencies
       shell: bash
       env:
@@ -47,6 +38,15 @@ runs:
         set -euo pipefail
         cd "$SOURCE_DIR"
         bun install
+
+    - name: Test V2 Android patcher
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        cd "$SOURCE_DIR/packages/cli"
+        bun test ../../../.github/scripts/termux-v2-opentui-android.test.ts
 
     - name: Patch V2 Android build
       shell: bash
