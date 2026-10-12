@@ -8,8 +8,10 @@ on:
       - .github/actions/build-v2-android-cli/action.yml
       - .github/scripts/termux-patch-v2-build.ts
       - .github/scripts/termux-v2-opentui-android.ts
+      - .github/scripts/termux-v2-opentui-android.test.ts
       - .github/workflows/termux-android-artifact-smoke.yml
       - .github/workflows/termux-v2-weekly.yml
+      - packages/opencode/script/patch-android-elf.ts
   schedule:
     - cron: "17 9 * * 1"
   workflow_dispatch:
@@ -25,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: termux-v2-weekly
+  group: termux-v2-weekly-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'release' }}
   cancel-in-progress: false
 
 defaults:

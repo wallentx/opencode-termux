@@ -30,6 +30,10 @@ runs:
       with:
         bun-version: ${{ steps.bun.outputs.version }}
 
+    - name: Test V2 Android patcher
+      shell: bash
+      run: bun test .github/scripts/termux-v2-opentui-android.test.ts
+
     - name: Install upstream dependencies
       shell: bash
       env:
@@ -61,6 +65,35 @@ runs:
         fi
         echo "$zig_dir" >> "$GITHUB_PATH"
         "$zig_dir/zig" version
+
+    - name: Validate Zig Android nullability workaround
+      shell: bash
+      run: |
+        set -euo pipefail
+        ndk_sysroot="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+        header="$RUNNER_TEMP/android-nullability.h"
+        error_log="$RUNNER_TEMP/android-nullability.log"
+        printf '#include <sys/time.h>\n' > "$header"
+
+        if zig translate-c \
+          -lc \
+          -target aarch64-linux-android \
+          -isystem "$ndk_sysroot/usr/include" \
+          -isystem "$ndk_sysroot/usr/include/aarch64-linux-android" \
+          "$header" >/dev/null 2>"$error_log"
+        then
+          echo "Expected Android NDK nullability translation to fail without the compatibility macro." >&2
+          exit 1
+        fi
+        grep -Fq "nullability specifier cannot be applied" "$error_log"
+
+        zig translate-c \
+          -lc \
+          -D_Nullable= \
+          -target aarch64-linux-android \
+          -isystem "$ndk_sysroot/usr/include" \
+          -isystem "$ndk_sysroot/usr/include/aarch64-linux-android" \
+          "$header" >/dev/null
 
     - name: Install Bun build toolchain
       shell: bash

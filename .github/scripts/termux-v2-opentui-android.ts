@@ -1,14 +1,22 @@
 #!/usr/bin/env bun
 
-import { $ } from "bun"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import pkg from "../package.json"
-import top from "../../../package.json"
 
+const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v1-nullability"
+if (process.argv[2] === "--patch-only") {
+  const file = process.argv[3]
+  if (!file) throw new Error("Usage: opentui-android.ts --patch-only <build.zig>")
+  patchOpenTUIBuild(path.resolve(file))
+  process.exit(0)
+}
+
+const { $ } = await import("bun")
 const dir = path.resolve(import.meta.dirname, "..")
 const root = path.resolve(dir, "../..")
+const pkg = await Bun.file(path.join(dir, "package.json")).json()
+const top = await Bun.file(path.join(root, "package.json")).json()
 const dependency = pkg.dependencies["@opentui/core"]
 const version = dependency === "catalog:" ? top.workspaces.catalog["@opentui/core"] : dependency
 
@@ -25,7 +33,7 @@ if (typeof head !== "string" || !/^[0-9a-f]{40}$/.test(head)) {
 }
 
 const tmp = process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? os.tmpdir()
-const source = path.join(tmp, `opentui-v2-${version}-${head.slice(0, 12)}`)
+const source = path.join(tmp, `opentui-v2-${version}-${head.slice(0, 12)}-${OPENTUI_ANDROID_PATCH}`)
 if (!fs.existsSync(path.join(source, "packages/native/build.zig"))) {
   fs.mkdirSync(source, { recursive: true })
   await $`git init`.cwd(source)
@@ -200,9 +208,11 @@ function androidNdk() {
 }
 
 function patchOpenTUIBuild(file: string) {
-  const marker = "android-lib-dir"
   const original = fs.readFileSync(file, "utf8")
-  if (original.includes(marker)) return
+  if (original.includes(OPENTUI_ANDROID_PATCH)) return
+  if (original.includes("android-lib-dir")) {
+    throw new Error(`Cached OpenTUI source contains an outdated Android patch: ${file}`)
+  }
 
   const pathsBefore = `const LIB_NAME = "opentui";
 const ROOT_SOURCE_FILE = "src/lib.zig";
@@ -211,6 +221,7 @@ const GHOSTTY_VT_VERSION = "0.1.0-dev+b988efcf";`
 const ROOT_SOURCE_FILE = "src/lib.zig";
 const GHOSTTY_VT_VERSION = "0.1.0-dev+b988efcf";
 
+// ${OPENTUI_ANDROID_PATCH}
 const AndroidPaths = struct {
     library: ?[]const u8 = null,
     include: ?[]const u8 = null,
@@ -221,7 +232,7 @@ var android_paths = AndroidPaths{};`
     const macos_sdk_path = resolveMacOSSDKPath(b);`
   const optionsAfter = `    const gpa_safe_stats = b.option(bool, "gpa-safe-stats", "Enable GPA safety checks for trustworthy allocator stats") orelse false;
     android_paths = .{
-        .library = b.option([]const u8, "${marker}", "Android NDK library directory"),
+        .library = b.option([]const u8, "android-lib-dir", "Android NDK library directory"),
         .include = b.option([]const u8, "android-include-dir", "Android NDK system include directory"),
         .arch_include = b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory"),
     };
@@ -238,6 +249,8 @@ var android_paths = AndroidPaths{};`
     yoga_translate.addIncludePath(yoga_dep.path(""));`
   const translatedAfter = `    miniaudio_translate.addIncludePath(b.path("src"));
     if (target.result.abi == .android) {
+        // Zig translate-c rejects NDK array-parameter nullability.
+        miniaudio_translate.defineCMacro("_Nullable", "");
         if (android_paths.include) |include_path| {
             miniaudio_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
@@ -255,6 +268,8 @@ var android_paths = AndroidPaths{};`
     });
     yoga_translate.addIncludePath(yoga_dep.path(""));
     if (target.result.abi == .android) {
+        // Keep Android header translation consistent with miniaudio.
+        yoga_translate.defineCMacro("_Nullable", "");
         if (android_paths.include) |include_path| {
             yoga_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
