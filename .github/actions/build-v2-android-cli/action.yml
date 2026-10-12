@@ -129,7 +129,7 @@ runs:
       run: |
         set -euo pipefail
         cd "$SOURCE_DIR"
-        ./packages/cli/script/build.ts --target=cli-android-arm64 --skip-install
+        ./packages/cli/script/build.ts --target=opencode-android-arm64 --skip-install
 
     - name: Inspect V2 Android artifact
       shell: bash
