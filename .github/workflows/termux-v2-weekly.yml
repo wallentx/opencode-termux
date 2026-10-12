@@ -1,6 +1,15 @@
 name: termux-v2-weekly
 
 on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/actions/build-v2-android-cli/action.yml
+      - .github/scripts/termux-patch-v2-build.ts
+      - .github/scripts/termux-v2-opentui-android.ts
+      - .github/workflows/termux-android-artifact-smoke.yml
+      - .github/workflows/termux-v2-weekly.yml
   schedule:
     - cron: "17 9 * * 1"
   workflow_dispatch:
@@ -146,7 +155,7 @@ jobs:
     needs:
       - build
       - termux-smoke
-    if: github.repository == 'wallentx/opencode-termux'
+    if: github.repository == 'wallentx/opencode-termux' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
