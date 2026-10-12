@@ -122,7 +122,7 @@ merge_release_branch() {
   fi
 
   if ! git merge --no-ff --no-commit "origin/${RELEASE_BRANCH}"; then
-    bash "${script_dir}/termux-resolve-release-conflicts.sh"
+    bash "${seed_dir}/.github/scripts/termux-resolve-release-conflicts.sh"
   fi
 
   if [[ -n "$(git diff --name-only --diff-filter=U)" ]]; then
@@ -232,50 +232,54 @@ if [[ -n "${existing_pr}" && "$(jq -r '.headRefName' <<< "${existing_pr}")" != "
   WORK_BRANCH="$(jq -r '.headRefName' <<< "${existing_pr}")"
 fi
 
+work_branch_exists=false
 if git ls-remote --exit-code --heads origin "${WORK_BRANCH}" >/dev/null 2>&1; then
+  work_branch_exists=true
   git fetch origin "${WORK_BRANCH}"
   git checkout -B "${WORK_BRANCH}" "origin/${WORK_BRANCH}"
 else
   git checkout -B "${WORK_BRANCH}" "origin/${PATCH_BRANCH}"
 fi
 
-seed_release_automation_files
-normalize_workspace_versions
+if [[ -z "${existing_pr}" ]]; then
+  seed_release_automation_files
+  normalize_workspace_versions
 
-mkdir -p .github
-jq -n \
-  --arg upstream_repo "${UPSTREAM_REPO}" \
-  --arg upstream_tag "${UPSTREAM_TAG}" \
-  --arg upstream_name "${UPSTREAM_NAME}" \
-  --arg upstream_html_url "${UPSTREAM_HTML_URL}" \
-  --arg upstream_target "${UPSTREAM_TARGET}" \
-  --arg upstream_release_id "${UPSTREAM_ID}" \
-  --arg release_train "${RELEASE_TRAIN}" \
-  --arg release_branch "${RELEASE_BRANCH}" \
-  --arg work_branch "${WORK_BRANCH}" \
-  --arg patch_branch "${PATCH_BRANCH}" \
-  --arg patch_source_sha "$(git rev-parse "origin/${PATCH_BRANCH}")" \
-  --arg termux_tag "${TERMUX_TAG}" \
-  --argjson upstream_prerelease "${UPSTREAM_PRERELEASE}" \
-  '{
-    upstream_repo: $upstream_repo,
-    upstream_tag: $upstream_tag,
-    upstream_name: $upstream_name,
-    upstream_html_url: $upstream_html_url,
-    upstream_target: $upstream_target,
-    upstream_release_id: $upstream_release_id,
-    upstream_prerelease: $upstream_prerelease,
-    release_train: $release_train,
-    release_branch: $release_branch,
-    work_branch: $work_branch,
-    patch_branch: $patch_branch,
-    patch_source_sha: $patch_source_sha,
-    termux_tag: $termux_tag
-  }' > .github/termux-release.json
+  mkdir -p .github
+  jq -n \
+    --arg upstream_repo "${UPSTREAM_REPO}" \
+    --arg upstream_tag "${UPSTREAM_TAG}" \
+    --arg upstream_name "${UPSTREAM_NAME}" \
+    --arg upstream_html_url "${UPSTREAM_HTML_URL}" \
+    --arg upstream_target "${UPSTREAM_TARGET}" \
+    --arg upstream_release_id "${UPSTREAM_ID}" \
+    --arg release_train "${RELEASE_TRAIN}" \
+    --arg release_branch "${RELEASE_BRANCH}" \
+    --arg work_branch "${WORK_BRANCH}" \
+    --arg patch_branch "${PATCH_BRANCH}" \
+    --arg patch_source_sha "$(git rev-parse "origin/${PATCH_BRANCH}")" \
+    --arg termux_tag "${TERMUX_TAG}" \
+    --argjson upstream_prerelease "${UPSTREAM_PRERELEASE}" \
+    '{
+      upstream_repo: $upstream_repo,
+      upstream_tag: $upstream_tag,
+      upstream_name: $upstream_name,
+      upstream_html_url: $upstream_html_url,
+      upstream_target: $upstream_target,
+      upstream_release_id: $upstream_release_id,
+      upstream_prerelease: $upstream_prerelease,
+      release_train: $release_train,
+      release_branch: $release_branch,
+      work_branch: $work_branch,
+      patch_branch: $patch_branch,
+      patch_source_sha: $patch_source_sha,
+      termux_tag: $termux_tag
+    }' > .github/termux-release.json
 
-git add -A
-if ! git diff --cached --quiet; then
-  git commit -m "chore(termux): prepare ${UPSTREAM_TAG}"
+  git add -A
+  if ! git diff --cached --quiet; then
+    git commit -m "chore(termux): prepare ${UPSTREAM_TAG}"
+  fi
 fi
 
 merge_release_branch
@@ -286,7 +290,9 @@ if [[ -z "${existing_pr}" ]] && git diff --quiet "origin/${RELEASE_BRANCH}" HEAD
   exit 0
 fi
 
-git push --no-verify --force-with-lease origin "${WORK_BRANCH}"
+if [[ "${work_branch_exists}" == "false" || "$(git rev-parse HEAD)" != "$(git rev-parse "origin/${WORK_BRANCH}")" ]]; then
+  git push --no-verify --force-with-lease origin "${WORK_BRANCH}"
+fi
 
 body_path="${RUNNER_TEMP}/termux-release-pr.md"
 {
