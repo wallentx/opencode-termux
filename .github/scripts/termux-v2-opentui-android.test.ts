@@ -40,6 +40,21 @@ fn addNativeAudioDependencies(b: *std.Build, module: *std.Build.Module, target: 
     }
 }
 `
+const clipboard = `extern "c" fn pthread_mach_thread_np(thread: std.c.pthread_t) std.c.mach_port_t;
+extern "c" fn pthread_tryjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;
+extern "c" fn pthread_peekjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;
+
+fn tryJoinThread(thread: std.Thread) bool {
+    return switch (builtin.os.tag) {
+        .linux => switch (pthread_tryjoin_np(thread.getHandle(), null)) {
+            0 => true,
+            @intFromEnum(std.posix.E.BUSY) => false,
+            else => false,
+        },
+        else => false,
+    };
+}
+`
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
@@ -48,16 +63,22 @@ afterEach(async () => {
 describe("OpenTUI Android build patch", () => {
   test("adds Android translation compatibility once", async () => {
     const file = await fixture(upstream)
-    expect(await patch(file)).toEqual({ code: 0, stderr: "" })
+    const host = await fixture(clipboard)
+    expect(await patch(file, host)).toEqual({ code: 0, stderr: "" })
 
     const first = await readFile(file, "utf8")
     expect(first.match(/defineCMacro\("_Nullable", ""\)/g)).toHaveLength(2)
-    expect(first.match(/opencode-termux-android-v1-nullability/g)).toHaveLength(1)
+    expect(first.match(/opencode-termux-android-v2-pthread/g)).toHaveLength(1)
     expect(first).toContain("if (target.result.abi == .android) {\n        // Zig translate-c rejects")
     expect(first).toContain("if (target.result.abi == .android) {\n        // Keep Android header translation")
+    const firstHost = await readFile(host, "utf8")
+    expect(firstHost).toContain("opencode-termux-android-pthread-join")
+    expect(firstHost).toContain(".linux => switch (builtin.abi)")
+    expect(firstHost).toContain("pthread_gettid_np(thread.getHandle())")
 
-    expect(await patch(file)).toEqual({ code: 0, stderr: "" })
+    expect(await patch(file, host)).toEqual({ code: 0, stderr: "" })
     expect(await readFile(file, "utf8")).toBe(first)
+    expect(await readFile(host, "utf8")).toBe(firstHost)
   })
 
   test("rejects a stale cached patch", async () => {
@@ -76,8 +97,8 @@ async function fixture(contents: string) {
   return file
 }
 
-async function patch(file: string) {
-  const child = Bun.spawn([process.execPath, script, "--patch-only", file], {
+async function patch(file: string, host?: string) {
+  const child = Bun.spawn([process.execPath, script, "--patch-only", file, ...(host ? [host] : [])], {
     stdout: "pipe",
     stderr: "pipe",
   })

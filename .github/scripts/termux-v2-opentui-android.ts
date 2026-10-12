@@ -4,11 +4,12 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v1-nullability"
+const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v2-pthread"
 if (process.argv[2] === "--patch-only") {
   const file = process.argv[3]
   if (!file) throw new Error("Usage: opentui-android.ts --patch-only <build.zig>")
   patchOpenTUIBuild(path.resolve(file))
+  if (process.argv[4]) patchOpenTUIClipboard(path.resolve(process.argv[4]))
   process.exit(0)
 }
 
@@ -58,6 +59,7 @@ await Bun.write(
 )
 
 patchOpenTUIBuild(path.join(source, "packages/native/build.zig"))
+patchOpenTUIClipboard(path.join(source, "packages/native/src/clipboard/host.zig"))
 await $`sh scripts/prepare-zig-deps.sh`.cwd(path.join(source, "packages/native"))
 await $`zig build -Dlibrary-target=aarch64-linux-android -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
   path.join(source, "packages/native"),
@@ -307,4 +309,40 @@ var android_paths = AndroidPaths{};`
       .replace(translatedBefore, translatedAfter)
       .replace(before, after),
   )
+}
+
+function patchOpenTUIClipboard(file: string) {
+  const marker = "opencode-termux-android-pthread-join"
+  const original = fs.readFileSync(file, "utf8")
+  if (original.includes(marker)) return
+
+  const declarationsBefore = `extern "c" fn pthread_mach_thread_np(thread: std.c.pthread_t) std.c.mach_port_t;
+extern "c" fn pthread_tryjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;
+extern "c" fn pthread_peekjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;`
+  const declarationsAfter = `extern "c" fn pthread_mach_thread_np(thread: std.c.pthread_t) std.c.mach_port_t;
+extern "c" fn pthread_tryjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;
+extern "c" fn pthread_peekjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;
+// ${marker}
+extern "c" fn pthread_gettid_np(thread: std.Thread.Handle) c_int;`
+  const joinBefore = `        .linux => switch (pthread_tryjoin_np(thread.getHandle(), null)) {
+            0 => true,
+            @intFromEnum(std.posix.E.BUSY) => false,
+            else => false,
+        },`
+  const joinAfter = `        .linux => switch (builtin.abi) {
+            .android => blk: {
+                if (pthread_gettid_np(thread.getHandle()) != 0) break :blk false;
+                thread.join();
+                break :blk true;
+            },
+            else => switch (pthread_tryjoin_np(thread.getHandle(), null)) {
+                0 => true,
+                @intFromEnum(std.posix.E.BUSY) => false,
+                else => false,
+            },
+        },`
+
+  if (!original.includes(declarationsBefore)) throw new Error("Cannot patch OpenTUI Android pthread declarations")
+  if (!original.includes(joinBefore)) throw new Error("Cannot patch OpenTUI Android thread join")
+  fs.writeFileSync(file, original.replace(declarationsBefore, declarationsAfter).replace(joinBefore, joinAfter))
 }
