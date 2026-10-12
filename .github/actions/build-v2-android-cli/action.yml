@@ -1,0 +1,172 @@
+name: "Build V2 Android CLI"
+description: "Patch upstream V2 and build its Android arm64 CLI"
+inputs:
+  source-dir:
+    description: "Checkout containing the upstream V2 source"
+    required: true
+  version:
+    description: "SemVer-compatible version to embed in the CLI"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      with:
+        node-version: "24"
+
+    - name: Resolve Bun version
+      id: bun
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        version="$(node -p "require('./' + process.env.SOURCE_DIR + '/package.json').packageManager.split('@')[1]")"
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version: ${{ steps.bun.outputs.version }}
+
+    - name: Install upstream dependencies
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        cd "$SOURCE_DIR"
+        bun install
+
+    - name: Patch V2 Android build
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: bun .github/scripts/termux-patch-v2-build.ts "$SOURCE_DIR"
+
+    - name: Setup Zig 0.16.0
+      shell: bash
+      run: |
+        set -euo pipefail
+        zig_dir="${RUNNER_TOOL_CACHE:-${RUNNER_TEMP}}/zig/0.16.0/x86_64-linux"
+        if [[ ! -x "${zig_dir}/zig" ]]; then
+          archive="${RUNNER_TEMP}/zig-x86_64-linux-0.16.0.tar.xz"
+          curl -fsSL --retry 5 --retry-delay 5 \
+            https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz \
+            -o "$archive"
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  ${archive}" | sha256sum -c -
+          mkdir -p "$zig_dir"
+          tar -xJf "$archive" -C "$zig_dir" --strip-components=1
+        fi
+        echo "$zig_dir" >> "$GITHUB_PATH"
+        "$zig_dir/zig" version
+
+    - name: Install Bun build toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends curl wget gnupg software-properties-common ninja-build cmake file binutils
+        for attempt in 1 2 3
+        do
+          if curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --connect-timeout 20 --max-time 120 https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"; then
+            break
+          fi
+          if [[ "$attempt" -eq 3 ]]; then exit 1; fi
+          sleep $((attempt * 30))
+        done
+        chmod +x "$RUNNER_TEMP/llvm.sh"
+        for attempt in 1 2 3
+        do
+          if sudo "$RUNNER_TEMP/llvm.sh" 21; then break; fi
+          if [[ "$attempt" -eq 3 ]]; then exit 1; fi
+          sudo rm -f /etc/apt/sources.list.d/*llvm* /etc/apt/sources.list.d/archive_uri-https_apt_llvm_org_noble_-noble.list
+          sleep $((attempt * 30))
+        done
+        sudo apt-get update -o Acquire::Retries=5
+        sudo apt-get install -y --no-install-recommends clang-21 lld-21
+
+        llvm_resource_dir="$(clang-21 -print-resource-dir)"
+        ndk_prebuilt="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+        ndk_clang_version="$(ls "$ndk_prebuilt/lib/clang" | sort -V | tail -n 1)"
+        ndk_runtime_dir="$ndk_prebuilt/lib/clang/$ndk_clang_version/lib/linux"
+        sudo mkdir -p "$llvm_resource_dir/lib/aarch64-unknown-linux-android28" "$llvm_resource_dir/lib/linux/aarch64"
+        sudo ln -sf "$ndk_runtime_dir/libclang_rt.builtins-aarch64-android.a" "$llvm_resource_dir/lib/aarch64-unknown-linux-android28/libclang_rt.builtins.a"
+        sudo ln -sf "$ndk_runtime_dir/aarch64/libunwind.a" "$llvm_resource_dir/lib/aarch64-unknown-linux-android28/libunwind.a"
+        sudo ln -sf "$ndk_runtime_dir/libclang_rt.builtins-aarch64-android.a" "$llvm_resource_dir/lib/linux/libclang_rt.builtins-aarch64-android.a"
+        sudo ln -sf "$ndk_runtime_dir/aarch64/libunwind.a" "$llvm_resource_dir/lib/linux/aarch64/libunwind.a"
+
+    - name: Build Android Bun runtime with FFI
+      shell: bash
+      env:
+        BUN_VERSION: ${{ steps.bun.outputs.version }}
+      run: |
+        set -euo pipefail
+        export CC=clang-21
+        export CXX=clang++-21
+        export LD=ld.lld-21
+        ndk_prebuilt="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64"
+        mkdir -p "$RUNNER_TEMP/android-toolchain-bin"
+        ln -sf "$ndk_prebuilt/bin/llvm-strip" "$RUNNER_TEMP/android-toolchain-bin/strip"
+        export PATH="$RUNNER_TEMP/android-toolchain-bin:$PATH"
+        bun_source="$RUNNER_TEMP/bun-src"
+        git clone --depth=1 --branch "bun-v${BUN_VERSION}" https://github.com/oven-sh/bun.git "$bun_source"
+        bun_build="$bun_source/build/android-ffi"
+        cd "$bun_source"
+        bun install --frozen-lockfile
+        bun scripts/build.ts --profile=android-release --tinycc=on --build-dir="$bun_build" --target=bun -j"$(nproc)"
+        test -x "$bun_build/bun"
+        file "$bun_build/bun"
+        echo "OPENCODE_ANDROID_BUN=$bun_build/bun" >> "$GITHUB_ENV"
+
+    - name: Build V2 Android CLI
+      shell: bash
+      env:
+        OPENCODE_CHANNEL: dev
+        OPENCODE_VERSION: ${{ inputs.version }}
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        cd "$SOURCE_DIR"
+        ./packages/cli/script/build.ts --target=cli-android-arm64 --skip-install
+
+    - name: Inspect V2 Android artifact
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        artifact_dir="$SOURCE_DIR/packages/cli/dist/cli-android-arm64"
+        binary="$artifact_dir/bin/opencode"
+        opentui_lib="$(find "$SOURCE_DIR/node_modules" -path '*/@opentui/core-android-arm64/libopentui.so' -print -quit)"
+        smoke_dir="$SOURCE_DIR/packages/cli/dist/android-smoke"
+        mkdir -p "$smoke_dir"
+
+        test -x "$binary"
+        test -f "$opentui_lib"
+        file "$binary" | tee "$smoke_dir/file.txt"
+        readelf -h "$binary" | tee "$smoke_dir/readelf-header.txt"
+        readelf -l "$binary" | tee "$smoke_dir/readelf-program-headers.txt"
+        readelf -S "$binary" > "$smoke_dir/readelf-sections.txt"
+        readelf -d "$binary" | tee "$smoke_dir/readelf-dynamic.txt"
+        grep -q "Machine:.*AArch64" "$smoke_dir/readelf-header.txt"
+        grep -q "Type:.*DYN" "$smoke_dir/readelf-header.txt"
+        if grep -E "Requesting program interpreter: .*(ld-linux|ld-musl)" "$smoke_dir/readelf-program-headers.txt"; then exit 1; fi
+        if grep -E "Shared library: \[(libc\.so\.6|ld-linux|ld-musl)" "$smoke_dir/readelf-dynamic.txt"; then exit 1; fi
+
+        file "$opentui_lib" | tee "$smoke_dir/opentui-file.txt"
+        readelf -d "$opentui_lib" | tee "$smoke_dir/opentui-readelf-dynamic.txt"
+        readelf -Ws "$opentui_lib" > "$smoke_dir/opentui-readelf-symbols.txt"
+        readelf -r "$opentui_lib" > "$smoke_dir/opentui-readelf-relocs.txt"
+        if grep -E "Shared library: \[(libc\.so\.6|ld-linux|ld-musl|libstdc\+\+|libgcc_s)" "$smoke_dir/opentui-readelf-dynamic.txt"; then exit 1; fi
+        if grep -E "Shared library: \[(libc\+\+|libc\+\+_shared|libunwind)\.so" "$smoke_dir/opentui-readelf-dynamic.txt"; then exit 1; fi
+
+    - name: Pack V2 Android artifact
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: |
+        set -euo pipefail
+        cd "$SOURCE_DIR/packages/cli/dist/cli-android-arm64/bin"
+        tar -czf ../../opencode-android-arm64.tar.gz *

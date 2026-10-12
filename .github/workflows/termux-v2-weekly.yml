@@ -1,0 +1,228 @@
+name: termux-v2-weekly
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "anomalyco/opencode ref to build"
+        required: false
+        default: v2
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: termux-v2-weekly
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build V2 Android artifact
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+      automation_sha: ${{ steps.metadata.outputs.automation_sha }}
+      build_version: ${{ steps.metadata.outputs.build_version }}
+      release_tag: ${{ steps.metadata.outputs.release_tag }}
+      source_sha: ${{ steps.metadata.outputs.source_sha }}
+      upstream_version: ${{ steps.metadata.outputs.upstream_version }}
+    steps:
+      - name: Checkout Termux automation
+        uses: actions/checkout@v6
+
+      - name: Checkout upstream V2
+        uses: actions/checkout@v6
+        with:
+          repository: anomalyco/opencode
+          ref: ${{ inputs.upstream_ref || 'v2' }}
+          fetch-depth: 1
+          path: opencode-v2
+
+      - name: Resolve weekly metadata
+        id: metadata
+        env:
+          UPSTREAM_REF: ${{ inputs.upstream_ref || 'v2' }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git -C opencode-v2 rev-parse HEAD)"
+          source_tree="$(git -C opencode-v2 rev-parse 'HEAD^{tree}')"
+          upstream_version="$(node -p "require('./opencode-v2/package.json').version")"
+          if [[ ! "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Unexpected upstream V2 version: $upstream_version" >&2
+            exit 1
+          fi
+          date_tag="$(date -u +%Y.%m.%d)"
+          date_version="$(date -u +%Y%m%d)"
+          build_version="${upstream_version%%-*}-termux.${date_version}"
+          release_tag="v2.${date_tag}-termux"
+          artifact_name="opencode-v2-android-arm64-${release_tag}"
+          {
+            echo "artifact_name=${artifact_name}"
+            echo "automation_sha=$(git rev-parse HEAD)"
+            echo "build_version=${build_version}"
+            echo "release_tag=${release_tag}"
+            echo "source_sha=${source_sha}"
+            echo "source_tree=${source_tree}"
+            echo "upstream_ref=${UPSTREAM_REF}"
+            echo "upstream_version=${upstream_version}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build V2 Android CLI
+        uses: ./.github/actions/build-v2-android-cli
+        with:
+          source-dir: opencode-v2
+          version: ${{ steps.metadata.outputs.build_version }}
+
+      - name: Stage V2 Android artifact
+        env:
+          AUTOMATION_SHA: ${{ steps.metadata.outputs.automation_sha }}
+          BUILD_VERSION: ${{ steps.metadata.outputs.build_version }}
+          RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
+          SOURCE_SHA: ${{ steps.metadata.outputs.source_sha }}
+          SOURCE_TREE: ${{ steps.metadata.outputs.source_tree }}
+          UPSTREAM_REF: ${{ steps.metadata.outputs.upstream_ref }}
+          UPSTREAM_VERSION: ${{ steps.metadata.outputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          mkdir -p v2-release
+          cp opencode-v2/packages/cli/dist/opencode-android-arm64.tar.gz v2-release/
+          (
+            cd v2-release
+            sha256sum opencode-android-arm64.tar.gz > opencode-android-arm64.tar.gz.sha256
+          )
+          jq -n \
+            --arg automation_sha "$AUTOMATION_SHA" \
+            --arg build_version "$BUILD_VERSION" \
+            --arg release_tag "$RELEASE_TAG" \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg source_tree "$SOURCE_TREE" \
+            --arg upstream_ref "$UPSTREAM_REF" \
+            --arg upstream_version "$UPSTREAM_VERSION" \
+            '{
+              automation_sha: $automation_sha,
+              build_version: $build_version,
+              release_tag: $release_tag,
+              source_repository: "https://github.com/anomalyco/opencode",
+              source_ref: $upstream_ref,
+              source_sha: $source_sha,
+              source_tree: $source_tree,
+              upstream_version: $upstream_version
+            }' > v2-release/provenance.json
+          cp -a opencode-v2/packages/cli/dist/android-smoke v2-release/
+
+      - name: Upload V2 Android artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          if-no-files-found: error
+          retention-days: 14
+          path: v2-release
+
+  termux-smoke:
+    name: Smoke V2 Android artifact in Termux
+    needs: build
+    if: github.repository == 'wallentx/opencode-termux'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/termux-android-artifact-smoke.yml
+    with:
+      artifact_name: ${{ needs.build.outputs.artifact_name }}
+      artifact_run_id: ${{ github.run_id }}
+      generation: v2
+
+  publish:
+    name: Publish V2 weekly release
+    needs:
+      - build
+      - termux-smoke
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Export GitHub App token for gh
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: echo "GH_TOKEN=${APP_TOKEN}" >> "$GITHUB_ENV"
+
+      - name: Download V2 Android artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: v2-release
+
+      - name: Publish V2 weekly release
+        env:
+          AUTOMATION_SHA: ${{ needs.build.outputs.automation_sha }}
+          BUILD_VERSION: ${{ needs.build.outputs.build_version }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          UPSTREAM_VERSION: ${{ needs.build.outputs.upstream_version }}
+        run: |
+          set -euo pipefail
+          cd v2-release
+          sha256sum -c opencode-android-arm64.tar.gz.sha256
+          notes="$RUNNER_TEMP/termux-v2-weekly-notes.md"
+          {
+            echo "Weekly Termux build from anomalyco/opencode's V2 branch."
+            echo
+            echo "- Upstream version: \`${UPSTREAM_VERSION}\`"
+            echo "- Upstream source: \`${SOURCE_SHA}\`"
+            echo "- Embedded version: \`${BUILD_VERSION}\`"
+            echo "- Automation source: \`${AUTOMATION_SHA}\`"
+            echo
+            echo "## Checks"
+            echo
+            echo "- Android source build completed"
+            echo "- Android ELF inspection completed"
+            echo "- Termux runtime and TUI smoke completed"
+            echo
+            echo "## Checksum"
+            echo
+            sed 's/^/`/' opencode-android-arm64.tar.gz.sha256 | sed 's/$/`/'
+          } > "$notes"
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" \
+              opencode-android-arm64.tar.gz \
+              opencode-android-arm64.tar.gz.sha256 \
+              provenance.json \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$AUTOMATION_SHA" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$notes" \
+              --prerelease \
+              --latest=false
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            opencode-android-arm64.tar.gz \
+            opencode-android-arm64.tar.gz.sha256 \
+            provenance.json \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$AUTOMATION_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes-file "$notes" \
+            --prerelease \
+            --latest=false

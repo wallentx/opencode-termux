@@ -11,6 +11,11 @@ on:
         description: Workflow run id containing artifact_name.
         required: true
         type: string
+      generation:
+        description: CLI generation under test (v1 or v2).
+        required: false
+        default: v1
+        type: string
 
 permissions:
   actions: read
@@ -36,6 +41,7 @@ jobs:
         ARTIFACT_NAME=${{ inputs.artifact_name }}
         ARTIFACT_RUN_ID=${{ inputs.artifact_run_id }}
         DOWNLOAD_DIR=termux-smoke-artifact
+        OPENCODE_GENERATION=${{ inputs.generation }}
         PATH=/workspace-src/.github/scripts/termux-ci-bin:/data/data/com.termux/files/usr/bin:/usr/bin:/bin
         TERMUX_PACMAN_MIRROR=https://ftp.agdsn.de/termux-pacman
       host-commands: |
@@ -58,14 +64,16 @@ jobs:
         fi
         tar -tzf "$archive"
 
-        {
-          for package in core keymap solid
-          do
-            grep -Fq "\"@opentui/${package}\": \"0.3.4\"" package.json
-            grep -Fq "\"@opentui/${package}\": \"0.3.4\"" bun.lock
-            echo "@opentui/${package}=0.3.4"
-          done
-        } | tee "$DOWNLOAD_DIR/opentui-pin.txt"
+        if [[ "$OPENCODE_GENERATION" == "v1" ]]; then
+          {
+            for package in core keymap solid
+            do
+              grep -Fq "\"@opentui/${package}\": \"0.3.4\"" package.json
+              grep -Fq "\"@opentui/${package}\": \"0.3.4\"" bun.lock
+              echo "@opentui/${package}=0.3.4"
+            done
+          } | tee "$DOWNLOAD_DIR/opentui-pin.txt"
+        fi
       commands: |
         set -Eeuo pipefail
 
@@ -125,11 +133,13 @@ jobs:
         set -e
         echo "help status $help_status"
         grep -Eiq 'opencode|commands|options' termux-smoke-output/help.txt
-        {
-          echo "@opentui/core=0.3.4"
-          echo "@opentui/keymap=0.3.4"
-          echo "@opentui/solid=0.3.4"
-        } | tee termux-smoke-output/opentui-pin.txt
+        if [[ "$OPENCODE_GENERATION" == "v1" ]]; then
+          {
+            echo "@opentui/core=0.3.4"
+            echo "@opentui/keymap=0.3.4"
+            echo "@opentui/solid=0.3.4"
+          } | tee termux-smoke-output/opentui-pin.txt
+        fi
 
         export HOME="$PWD/termux-home"
         export OPENCODE_DISABLE_AUTOUPDATE=1
@@ -162,6 +172,12 @@ jobs:
           tail -c 4000 "$SMOKE_OUTPUT/$name.pty.log" >&2 || true
           exit 1
         }
+
+        if [[ "$OPENCODE_GENERATION" == "v2" ]]; then
+          smoke_tui default
+          smoke_tui mini mini --demo
+          exit 0
+        fi
 
         smoke_tui default --pure --print-logs --log-level DEBUG
         smoke_tui mini --mini --demo --pure --print-logs --log-level DEBUG
