@@ -25,6 +25,7 @@ jobs:
   # Native runners required: bun install cross-compilation flags (--os/--cpu)
   # do not produce byte-identical node_modules as native installs.
   compute-hash:
+    if: github.repository == 'anomalyco/opencode'
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +38,7 @@ jobs:
             runner: macos-15-intel
           - system: aarch64-darwin
             runner: macos-latest
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ github.repository == 'anomalyco/opencode' && (matrix.runner) || 'ubuntu-latest' }}
 
     steps:
       - name: Checkout repository
@@ -90,7 +91,7 @@ jobs:
 
   update-hashes:
     needs: compute-hash
-    if: github.event_name != 'pull_request'
+    if: github.repository == 'anomalyco/opencode' && github.event_name != 'pull_request'
     runs-on: blacksmith-4vcpu-ubuntu-2404
 
     steps:

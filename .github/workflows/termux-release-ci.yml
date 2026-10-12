@@ -1,0 +1,41 @@
+name: termux-release-ci
+
+on:
+  pull_request:
+    branches:
+      - termux-target
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: termux-release-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build Android release artifact
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Accept validated checkpoint
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          if [[ "$BASE_REF" != "termux-target" || "$HEAD_REF" != checkpoint-* ]]; then
+            echo "::error::Unexpected checkpoint PR shape: ${HEAD_REF} -> ${BASE_REF}"
+            exit 1
+          fi
+          echo "Checkpoint reuses the Android artifact already validated by its release PR."
