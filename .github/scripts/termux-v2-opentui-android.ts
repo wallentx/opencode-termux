@@ -51,7 +51,7 @@ await Bun.write(
 
 patchOpenTUIBuild(path.join(source, "packages/native/build.zig"))
 await $`sh scripts/prepare-zig-deps.sh`.cwd(path.join(source, "packages/native"))
-await $`zig build -Dlibrary-target=aarch64-linux-android -Dandroid-lib-dir=${ndk.libDir} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
+await $`zig build -Dlibrary-target=aarch64-linux-android -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
   path.join(source, "packages/native"),
 )
 
@@ -204,6 +204,42 @@ function patchOpenTUIBuild(file: string) {
   const original = fs.readFileSync(file, "utf8")
   if (original.includes(marker)) return
 
+  const translatedBefore = `    miniaudio_translate.addIncludePath(b.path("src"));
+    module.addImport("miniaudio", miniaudio_translate.createModule());
+
+    const yoga_dep = b.dependency("yoga", .{});
+    const yoga_translate = b.addTranslateC(.{
+        .root_source_file = yoga_dep.path("yoga/Yoga.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    yoga_translate.addIncludePath(yoga_dep.path(""));`
+  const translatedAfter = `    miniaudio_translate.addIncludePath(b.path("src"));
+    if (target.result.abi == .android) {
+        if (b.option([]const u8, "android-include-dir", "Android NDK system include directory")) |include_path| {
+            miniaudio_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
+        }
+        if (b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory")) |include_path| {
+            miniaudio_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
+        }
+    }
+    module.addImport("miniaudio", miniaudio_translate.createModule());
+
+    const yoga_dep = b.dependency("yoga", .{});
+    const yoga_translate = b.addTranslateC(.{
+        .root_source_file = yoga_dep.path("yoga/Yoga.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    yoga_translate.addIncludePath(yoga_dep.path(""));
+    if (target.result.abi == .android) {
+        if (b.option([]const u8, "android-include-dir", "Android NDK system include directory")) |include_path| {
+            yoga_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
+        }
+        if (b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory")) |include_path| {
+            yoga_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
+        }
+    }`
   const before = `        .linux => {
             module.linkSystemLibrary("dl", .{});
             module.linkSystemLibrary("pthread", .{});
@@ -222,6 +258,7 @@ function patchOpenTUIBuild(file: string) {
                 module.linkSystemLibrary("m", .{});
             }
         },`
+  if (!original.includes(translatedBefore)) throw new Error("Cannot patch OpenTUI Android C translation includes")
   if (!original.includes(before)) throw new Error("Cannot patch OpenTUI Android system library handling")
-  fs.writeFileSync(file, original.replace(before, after))
+  fs.writeFileSync(file, original.replace(translatedBefore, translatedAfter).replace(before, after))
 }
