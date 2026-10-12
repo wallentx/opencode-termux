@@ -204,6 +204,28 @@ function patchOpenTUIBuild(file: string) {
   const original = fs.readFileSync(file, "utf8")
   if (original.includes(marker)) return
 
+  const pathsBefore = `const LIB_NAME = "opentui";
+const ROOT_SOURCE_FILE = "src/lib.zig";
+const GHOSTTY_VT_VERSION = "0.1.0-dev+b988efcf";`
+  const pathsAfter = `const LIB_NAME = "opentui";
+const ROOT_SOURCE_FILE = "src/lib.zig";
+const GHOSTTY_VT_VERSION = "0.1.0-dev+b988efcf";
+
+const AndroidPaths = struct {
+    library: ?[]const u8 = null,
+    include: ?[]const u8 = null,
+    arch_include: ?[]const u8 = null,
+};
+var android_paths = AndroidPaths{};`
+  const optionsBefore = `    const gpa_safe_stats = b.option(bool, "gpa-safe-stats", "Enable GPA safety checks for trustworthy allocator stats") orelse false;
+    const macos_sdk_path = resolveMacOSSDKPath(b);`
+  const optionsAfter = `    const gpa_safe_stats = b.option(bool, "gpa-safe-stats", "Enable GPA safety checks for trustworthy allocator stats") orelse false;
+    android_paths = .{
+        .library = b.option([]const u8, "${marker}", "Android NDK library directory"),
+        .include = b.option([]const u8, "android-include-dir", "Android NDK system include directory"),
+        .arch_include = b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory"),
+    };
+    const macos_sdk_path = resolveMacOSSDKPath(b);`
   const translatedBefore = `    miniaudio_translate.addIncludePath(b.path("src"));
     module.addImport("miniaudio", miniaudio_translate.createModule());
 
@@ -216,10 +238,10 @@ function patchOpenTUIBuild(file: string) {
     yoga_translate.addIncludePath(yoga_dep.path(""));`
   const translatedAfter = `    miniaudio_translate.addIncludePath(b.path("src"));
     if (target.result.abi == .android) {
-        if (b.option([]const u8, "android-include-dir", "Android NDK system include directory")) |include_path| {
+        if (android_paths.include) |include_path| {
             miniaudio_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
-        if (b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory")) |include_path| {
+        if (android_paths.arch_include) |include_path| {
             miniaudio_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
     }
@@ -233,10 +255,10 @@ function patchOpenTUIBuild(file: string) {
     });
     yoga_translate.addIncludePath(yoga_dep.path(""));
     if (target.result.abi == .android) {
-        if (b.option([]const u8, "android-include-dir", "Android NDK system include directory")) |include_path| {
+        if (android_paths.include) |include_path| {
             yoga_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
-        if (b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory")) |include_path| {
+        if (android_paths.arch_include) |include_path| {
             yoga_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
     }`
@@ -247,7 +269,7 @@ function patchOpenTUIBuild(file: string) {
         },`
   const after = `        .linux => {
             if (target.result.abi == .android) {
-                if (b.option([]const u8, "${marker}", "Android NDK library directory")) |lib_path| {
+                if (android_paths.library) |lib_path| {
                     module.addLibraryPath(.{ .cwd_relative = lib_path });
                 }
                 module.linkSystemLibrary("dl", .{});
@@ -258,7 +280,16 @@ function patchOpenTUIBuild(file: string) {
                 module.linkSystemLibrary("m", .{});
             }
         },`
+  if (!original.includes(pathsBefore)) throw new Error("Cannot add OpenTUI Android path storage")
+  if (!original.includes(optionsBefore)) throw new Error("Cannot add OpenTUI Android build options")
   if (!original.includes(translatedBefore)) throw new Error("Cannot patch OpenTUI Android C translation includes")
   if (!original.includes(before)) throw new Error("Cannot patch OpenTUI Android system library handling")
-  fs.writeFileSync(file, original.replace(translatedBefore, translatedAfter).replace(before, after))
+  fs.writeFileSync(
+    file,
+    original
+      .replace(pathsBefore, pathsAfter)
+      .replace(optionsBefore, optionsAfter)
+      .replace(translatedBefore, translatedAfter)
+      .replace(before, after),
+  )
 }
