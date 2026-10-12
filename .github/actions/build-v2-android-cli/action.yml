@@ -177,7 +177,7 @@ runs:
         set -euo pipefail
         artifact_dir="$SOURCE_DIR/packages/cli/dist/cli-android-arm64"
         binary="$artifact_dir/bin/opencode"
-        opentui_lib="$(find "$SOURCE_DIR/node_modules" -path '*/@opentui/core-android-arm64/libopentui.so' -print -quit)"
+        opentui_lib="$(find "$SOURCE_DIR/node_modules" -path '*/@opentui/core/android-arm64/libopentui.so' -print -quit)"
         smoke_dir="$SOURCE_DIR/packages/cli/dist/android-smoke"
         mkdir -p "$smoke_dir"
 

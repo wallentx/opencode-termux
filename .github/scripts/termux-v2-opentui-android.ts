@@ -67,7 +67,7 @@ const library = path.join(source, "packages/native/lib/aarch64-linux-android/lib
 if (!fs.existsSync(library)) throw new Error(`OpenTUI Android build did not produce ${library}`)
 
 const name = "@opentui/core-android-arm64"
-const native = path.join(path.dirname(core), "core-android-arm64")
+const native = path.join(core, "android-arm64")
 fs.rmSync(native, { recursive: true, force: true })
 fs.mkdirSync(native, { recursive: true })
 fs.copyFileSync(library, path.join(native, "libopentui.so"))
@@ -129,7 +129,7 @@ for (const file of fs.readdirSync(core)) {
 
   const target = path.join(core, file)
   const original = fs.readFileSync(target, "utf8")
-  if (original.includes("@opentui/core-android-arm64")) continue
+  if (original.includes("./android-arm64/index.bun.js")) continue
 
   const withDescriptor = original.replace(
     `var NATIVE_FILE_NAMES = {\n  darwin:`,
@@ -139,7 +139,7 @@ for (const file of fs.readdirSync(core)) {
 
   const patched = withDescriptor.replace(
     `  if (process.platform === "darwin") {`,
-    `  if (process.platform === "android" && process.arch === "arm64") {\n    return (await import("@opentui/core-android-arm64")).default;\n  }\n  if (process.platform === "darwin") {`,
+    `  if (process.platform === "android" && process.arch === "arm64") {\n    return (await import("./android-arm64/index.bun.js")).default;\n  }\n  if (process.platform === "darwin") {`,
   )
   if (patched !== withDescriptor) loaders++
   if (patched !== original) fs.writeFileSync(target, patched)
