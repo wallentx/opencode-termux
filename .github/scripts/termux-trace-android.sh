@@ -67,15 +67,19 @@ printf 'version=%s\n' "$?" >>"$output/status.txt"
 
 run_pty() {
   local name="$1"
+  local command
   local status
   shift
 
   # The inner timeout owns the traced command; the outer one also bounds script.
   # Do not resize the baseline PTY: its inherited size may explain the CI crash.
-  timeout -k 2s 27s script -q -e -f \
+  # script reconstructs -- arguments as shell text, so quote every argument first.
+  printf -v command '%q ' bash -c \
+    'printf "pty_rows_columns="; stty size; exec "$@"' \
+    "$name" timeout -k 2s 20s "$@"
+  SHELL="$(command -v bash)" timeout -k 2s 27s script -q -e -f \
     -O "$output/$name.pty.log" \
-    -- bash -c 'printf "pty_rows_columns="; stty size; exec "$@"' \
-    "$name" timeout -k 2s 20s "$@" >"$output/$name.console.log" 2>&1
+    -c "$command" >"$output/$name.console.log" 2>&1
   status="$?"
   printf '%s=%s\n' "$name" "$status" >>"$output/status.txt"
   printf '%s diagnostic exit status: %s\n' "$name" "$status"
