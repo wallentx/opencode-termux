@@ -40,6 +40,7 @@ readonly -a TERMUX_RELEASE_AUTOMATION_PATHS=(
 readonly -a TERMUX_CHECKPOINT_RELEASE_ONLY_PATHS=(
   "${TERMUX_RELEASE_AUTOMATION_PATHS[@]}"
   .github/termux-release.json
+  .termux-release-automation
 )
 
 termux_path_in_list() {
@@ -59,7 +60,7 @@ termux_is_checkpoint_release_only_path() {
 
 termux_is_checkpoint_source_wins_path() {
   case "$1" in
-    bun.lock | packages/*/package.json | sdks/*/package.json)
+    bun.lock | packages/*/package.json | sdks/*/package.json | packages/opencode/script/build.ts)
       return 0
       ;;
   esac
