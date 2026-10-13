@@ -1,6 +1,16 @@
 name: termux-android-artifact-smoke
 
 on:
+  workflow_dispatch:
+    inputs:
+      artifact_name:
+        description: Existing Android Actions artifact to trace
+        required: true
+        type: string
+      artifact_run_id:
+        description: Workflow run containing the artifact
+        required: true
+        type: string
   workflow_call:
     inputs:
       artifact_name:
@@ -24,6 +34,7 @@ permissions:
 jobs:
   smoke:
     name: Smoke opencode in Termux
+    if: github.event_name != 'workflow_dispatch' || github.workflow != 'termux-android-artifact-smoke'
     uses: wallentx/gh-actions/.github/workflows/termux-run.yml@main
     secrets:
       github-token: ${{ github.token }}
@@ -184,3 +195,49 @@ jobs:
       sync-back-paths: |
         termux-smoke-output
       upload-artifact-name: opencode-android-arm64-termux-smoke-${{ inputs.artifact_run_id }}
+
+  trace:
+    name: Trace existing Android artifact
+    if: github.event_name == 'workflow_dispatch' && github.workflow == 'termux-android-artifact-smoke'
+    uses: wallentx/gh-actions/.github/workflows/termux-run.yml@main
+    secrets:
+      github-token: ${{ github.token }}
+    with:
+      packages: |
+        binutils
+        ca-certificates
+        coreutils
+        file
+        gdb
+        strace
+        tar
+        util-linux
+      copy-paths: |
+        termux-trace-artifact
+        .github/scripts/termux-trace-android.sh
+      env: |
+        ARTIFACT_NAME=${{ inputs.artifact_name }}
+        ARTIFACT_RUN_ID=${{ inputs.artifact_run_id }}
+        TERM=xterm-256color
+        OPENCODE_DISABLE_AUTOUPDATE=1
+        PATH=/workspace-src/.github/scripts/termux-ci-bin:/data/data/com.termux/files/usr/bin:/usr/bin:/bin
+        TERMUX_PACMAN_MIRROR=https://ftp.agdsn.de/termux-pacman
+      host-commands: |
+        set -euo pipefail
+        mkdir -p termux-trace-artifact
+        gh run download "$ARTIFACT_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+          --name "$ARTIFACT_NAME" --dir termux-trace-artifact
+        cd termux-trace-artifact
+        sha256sum -c opencode-android-arm64.tar.gz.sha256
+      commands: |
+        set -euo pipefail
+        mkdir -p termux-trace-bin termux-trace-output trace-project
+        tar -xzf termux-trace-artifact/opencode-android-arm64.tar.gz -C termux-trace-bin
+        binary="$PWD/termux-trace-bin/opencode"
+        output="$PWD/termux-trace-output"
+        cp termux-trace-artifact/provenance.json "$output/"
+        cd trace-project
+        bash ../.github/scripts/termux-trace-android.sh "$binary" "$output"
+      sync-back-paths: |
+        termux-trace-output
+      upload-artifact-name: opencode-android-trace-${{ github.run_id }}
