@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v3-render-thread"
+const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v4-api-tls"
 if (process.argv[2] === "--patch-only") {
   const file = process.argv[3]
   if (!file) throw new Error("Usage: opentui-android.ts --patch-only <build.zig>")
@@ -50,6 +50,9 @@ if (!fs.existsSync(path.join(source, "packages/native/build.zig"))) {
 }
 
 const ndk = androidNdk()
+// Unversioned Zig Android targets default to API 29 and emit native ELF TLS,
+// which older bionic loaders ignore. Match code generation to the NDK API.
+const target = `aarch64-linux-android.${ndk.api}`
 const libc = path.join(tmp, `android-ndk-${ndk.api}.libc`)
 await Bun.write(
   libc,
@@ -67,11 +70,11 @@ await Bun.write(
 patchOpenTUIBuild(path.join(source, "packages/native/build.zig"))
 patchOpenTUIClipboard(path.join(source, "packages/native/src/clipboard/host.zig"))
 await $`sh scripts/prepare-zig-deps.sh`.cwd(path.join(source, "packages/native"))
-await $`zig build -Dlibrary-target=aarch64-linux-android -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
+await $`zig build -Dlibrary-target=${target} -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
   path.join(source, "packages/native"),
 )
 
-const library = path.join(source, "packages/native/lib/aarch64-linux-android/libopentui.so")
+const library = path.join(source, "packages/native/lib", target, "libopentui.so")
 if (!fs.existsSync(library)) throw new Error(`OpenTUI Android build did not produce ${library}`)
 
 const name = "@opentui/core-android-arm64"

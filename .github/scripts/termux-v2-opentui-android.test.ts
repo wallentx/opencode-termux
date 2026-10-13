@@ -81,7 +81,7 @@ describe("OpenTUI Android build patch", () => {
 
     const first = await readFile(file, "utf8")
     expect(first.match(/defineCMacro\("_Nullable", ""\)/g)).toHaveLength(2)
-    expect(first.match(/opencode-termux-android-v3-render-thread/g)).toHaveLength(1)
+    expect(first.match(/opencode-termux-android-v4-api-tls/g)).toHaveLength(1)
     expect(first).toContain("if (target.result.abi == .android) {\n        // Zig translate-c rejects")
     expect(first).toContain("if (target.result.abi == .android) {\n        // Keep Android header translation")
     const firstHost = await readFile(host, "utf8")

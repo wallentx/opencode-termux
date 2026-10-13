@@ -197,6 +197,10 @@ runs:
         readelf -d "$opentui_lib" | tee "$smoke_dir/opentui-readelf-dynamic.txt"
         readelf -Ws "$opentui_lib" > "$smoke_dir/opentui-readelf-symbols.txt"
         readelf -r "$opentui_lib" > "$smoke_dir/opentui-readelf-relocs.txt"
+        if grep -E 'R_AARCH64_TLS' "$smoke_dir/opentui-readelf-relocs.txt"; then
+          echo "OpenTUI requires native TLS, unavailable before Android API 29." >&2
+          exit 1
+        fi
         if grep -E " UND .*pthread_tryjoin_np" "$smoke_dir/opentui-readelf-symbols.txt"; then exit 1; fi
         if grep -E "Shared library: \[(libc\.so\.6|ld-linux|ld-musl|libstdc\+\+|libgcc_s)" "$smoke_dir/opentui-readelf-dynamic.txt"; then exit 1; fi
         if grep -E "Shared library: \[(libc\+\+|libc\+\+_shared|libunwind)\.so" "$smoke_dir/opentui-readelf-dynamic.txt"; then exit 1; fi
