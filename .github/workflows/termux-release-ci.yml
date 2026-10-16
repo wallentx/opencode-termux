@@ -3,6 +3,7 @@ name: termux-release-ci
 on:
   pull_request:
     branches:
+      - dev
       - "release-*"
       - termux-target
     types:
@@ -24,9 +25,27 @@ defaults:
     shell: bash
 
 jobs:
+  resolver:
+    name: Test release conflict resolution
+    if: github.repository == 'wallentx/opencode-termux' && github.base_ref == 'dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout automation PR
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: "24"
+
+      - name: Test guarded release merges
+        working-directory: packages/opencode
+        run: node --test ../../.github/scripts/termux-resolve-release-conflicts.test.mjs ../../.github/scripts/termux-release-installer.test.mjs
+
   build:
     name: Build Android release artifact
-    if: github.repository == 'wallentx/opencode-termux'
+    if: github.repository == 'wallentx/opencode-termux' && github.base_ref != 'dev'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     outputs:
@@ -93,6 +112,11 @@ jobs:
           version: ${{ steps.metadata.outputs.build_version }}
           release: ""
           repo: ${{ github.repository }}
+
+      - name: Test installation upgrade routing
+        if: steps.pr.outputs.release == 'true'
+        working-directory: packages/opencode
+        run: bun test ./test/installation/installation.test.ts
 
       - name: Stage Android release artifact
         if: steps.pr.outputs.release == 'true'

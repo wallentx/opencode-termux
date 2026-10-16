@@ -1,0 +1,7 @@
+<<<<<<< HEAD
+.zig-cache/
+.codegraph/
+.codex/
+=======
+/artifacts/
+>>>>>>> origin/release-1.19.3

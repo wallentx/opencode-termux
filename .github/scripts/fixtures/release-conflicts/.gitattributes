@@ -1,0 +1,3 @@
+# Seven-character conflict markers below are intentional regression-test data.
+*.full conflict-marker-size=32
+*.conflict conflict-marker-size=32
