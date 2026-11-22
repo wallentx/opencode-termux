@@ -128,6 +128,7 @@ async function fixtureDirectory() {
 
 async function patch(file: string, host?: string) {
   const child = Bun.spawn([process.execPath, script, "--patch-only", file, ...(host ? [host] : [])], {
+    cwd: path.dirname(file),
     stdout: "pipe",
     stderr: "pipe",
   })
@@ -137,6 +138,7 @@ async function patch(file: string, host?: string) {
 
 async function patchRuntime(directory: string) {
   const child = Bun.spawn([process.execPath, script, "--runtime-only", directory], {
+    cwd: directory,
     stdout: "pipe",
     stderr: "pipe",
   })
