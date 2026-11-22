@@ -37,16 +37,6 @@ replace(
 )
 
 replace(
-  `if (!skipInstall)
-  await $\`bun install --os="*" --cpu="*" @opentui/core@\${pkg.dependencies["@opentui/core"]} @opencode-ai/pty@\${pkg.dependencies["@opencode-ai/pty"]}\`
-const appArchive = path.join(dir, ".cache", "bun-app-archive.bin")`,
-  `if (!skipInstall)
-  await $\`bun install --os="*" --cpu="*" @opentui/core@\${pkg.dependencies["@opentui/core"]} @opencode-ai/pty@\${pkg.dependencies["@opencode-ai/pty"]}\`
-if (targets.some((item) => item.os === "android")) await import("./opentui-android")
-const appArchive = path.join(dir, ".cache", "bun-app-archive.bin")`,
-)
-
-replace(
   `  const parcelWatcherPackage = \`@parcel/watcher-\${item.os}-\${item.arch}\${item.os === "linux" ? \`-\${item.abi ?? "glibc"}\` : ""}\`
   const parcelWatcherPlugin: BunPlugin = {
     name: "parcel-watcher-binding",
@@ -84,10 +74,8 @@ replace(
 )
 
 replace(
-  `    entrypoints: ["./src/index.ts"],
-    tsconfig: "./tsconfig.json",`,
-  `    entrypoints: ["./src/index.ts"],
-    tsconfig: "./tsconfig.json",
+  `    tsconfig: "./tsconfig.json",`,
+  `    tsconfig: "./tsconfig.json",
     conditions: item.os === "android" ? ["android", "bun", "node"] : ["bun", "node"],`,
 )
 

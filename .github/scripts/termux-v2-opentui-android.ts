@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v4-api-tls"
+const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v6-target-libc"
 if (process.argv[2] === "--patch-only") {
   const file = process.argv[3]
   if (!file) throw new Error("Usage: opentui-android.ts --patch-only <build.zig>")
@@ -34,7 +34,8 @@ const core = [path.join(dir, "node_modules/@opentui/core"), path.join(root, "nod
 )
 if (!core) throw new Error("Cannot find installed @opentui/core")
 
-const head = JSON.parse((await $`npm view @opentui/core@${version} gitHead --json`.text()).trim())
+const metadata = JSON.parse((await $`npm view @opentui/core@${version} gitHead --json`.text()).trim())
+const head = Array.isArray(metadata) && metadata.length === 1 ? metadata[0] : metadata
 if (typeof head !== "string" || !/^[0-9a-f]{40}$/.test(head)) {
   throw new Error(`Cannot resolve @opentui/core@${version} gitHead`)
 }
@@ -62,15 +63,17 @@ await Bun.write(
     `crt_dir=${ndk.libDir}`,
     "msvc_lib_dir=",
     "kernel32_lib_dir=",
-    "gcc_dir=",
+    `cc_dir=${ndk.libDir}`,
+    "darwin_sdk_dir=",
     "",
   ].join("\n"),
 )
+await $`zig libc -target ${target} ${libc}`
 
 patchOpenTUIBuild(path.join(source, "packages/native/build.zig"))
 patchOpenTUIClipboard(path.join(source, "packages/native/src/clipboard/host.zig"))
 await $`sh scripts/prepare-zig-deps.sh`.cwd(path.join(source, "packages/native"))
-await $`zig build -Dlibrary-target=${target} -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Doptimize=ReleaseFast --libc ${libc}`.cwd(
+await $`zig build -Dlibrary-target=${target} -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Dandroid-libc=${libc} --release=fast`.cwd(
   path.join(source, "packages/native"),
 )
 
@@ -138,7 +141,6 @@ patchOpenTUIRuntime(core)
 function patchOpenTUIRuntime(directory: string) {
   let descriptorFound = false
   let loaderFound = false
-  let threadPolicyFound = false
   for (const file of fs.readdirSync(directory)) {
     if (!file.endsWith(".js")) continue
 
@@ -150,28 +152,19 @@ function patchOpenTUIRuntime(directory: string) {
           `var NATIVE_FILE_NAMES = {\n  darwin:`,
           `var NATIVE_FILE_NAMES = {\n  android: "libopentui.so",\n  darwin:`,
         )
-    const withLoader = withDescriptor.includes("./android-arm64/index.bun.js")
+    const patched = withDescriptor.includes("./android-arm64/index.bun.js")
       ? withDescriptor
       : withDescriptor.replace(
           `  if (process.platform === "darwin") {`,
           `  if (process.platform === "android" && process.arch === "arm64") {\n    return (await import("./android-arm64/index.bun.js")).default;\n  }\n  if (process.platform === "darwin") {`,
         )
-    const patched = withLoader.includes(`process.platform === "linux" || process.platform === "android"`)
-      ? withLoader
-      : withLoader.replace(
-          `    if (process.platform === "linux")\n      config.useThread = false;`,
-          `    if (process.platform === "linux" || process.platform === "android")\n      config.useThread = false;`,
-        )
     descriptorFound ||= patched.includes(`android: "libopentui.so"`)
     loaderFound ||= patched.includes("./android-arm64/index.bun.js")
-    threadPolicyFound ||= patched.includes(`process.platform === "linux" || process.platform === "android"`)
     if (patched !== original) fs.writeFileSync(target, patched)
   }
 
-  if (!descriptorFound || !loaderFound || !threadPolicyFound)
-    throw new Error(
-      `Did not patch @opentui/core Android runtime: descriptor=${descriptorFound}, loader=${loaderFound}, thread=${threadPolicyFound}`,
-    )
+  if (!descriptorFound || !loaderFound)
+    throw new Error(`Did not patch @opentui/core Android runtime: descriptor=${descriptorFound}, loader=${loaderFound}`)
 }
 
 function androidNdk() {
@@ -248,15 +241,15 @@ const GHOSTTY_VT_VERSION = "0.1.0-dev+b988efcf";
 
 // ${OPENTUI_ANDROID_PATCH}
 const AndroidPaths = struct {
+    libc: ?[]const u8 = null,
     library: ?[]const u8 = null,
     include: ?[]const u8 = null,
     arch_include: ?[]const u8 = null,
 };
 var android_paths = AndroidPaths{};`
-  const optionsBefore = `    const gpa_safe_stats = b.option(bool, "gpa-safe-stats", "Enable GPA safety checks for trustworthy allocator stats") orelse false;
-    const macos_sdk_path = resolveMacOSSDKPath(b);`
-  const optionsAfter = `    const gpa_safe_stats = b.option(bool, "gpa-safe-stats", "Enable GPA safety checks for trustworthy allocator stats") orelse false;
-    android_paths = .{
+  const optionsBefore = `    const macos_sdk_path = resolveMacOSSDKPath(b);`
+  const optionsAfter = `    android_paths = .{
+        .libc = b.option([]const u8, "android-libc", "Android NDK libc descriptor for target libraries"),
         .library = b.option([]const u8, "android-lib-dir", "Android NDK library directory"),
         .include = b.option([]const u8, "android-include-dir", "Android NDK system include directory"),
         .arch_include = b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory"),
@@ -267,7 +260,7 @@ var android_paths = AndroidPaths{};`
 
     const yoga_dep = b.dependency("yoga", .{});
     const yoga_translate = b.addTranslateC(.{
-        .root_source_file = yoga_dep.path("yoga/Yoga.h"),
+        .root_source_file = b.path("src/yoga-bridge.h"),
         .target = target,
         .optimize = optimize,
     });
@@ -287,7 +280,7 @@ var android_paths = AndroidPaths{};`
 
     const yoga_dep = b.dependency("yoga", .{});
     const yoga_translate = b.addTranslateC(.{
-        .root_source_file = yoga_dep.path("yoga/Yoga.h"),
+        .root_source_file = b.path("src/yoga-bridge.h"),
         .target = target,
         .optimize = optimize,
     });
@@ -302,6 +295,13 @@ var android_paths = AndroidPaths{};`
             yoga_translate.addSystemIncludePath(.{ .cwd_relative = include_path });
         }
     }`
+  const abiImport = '    module.addImport("context_abi_c", header.createModule());'
+  const abiImportAfter = `    if (target.result.abi == .android) {
+        header.defineCMacro("_Nullable", "");
+        if (android_paths.include) |include_path| header.addSystemIncludePath(.{ .cwd_relative = include_path });
+        if (android_paths.arch_include) |include_path| header.addSystemIncludePath(.{ .cwd_relative = include_path });
+    }
+${abiImport}`
   const before = `        .linux => {
             module.linkSystemLibrary("dl", .{});
             module.linkSystemLibrary("pthread", .{});
@@ -320,9 +320,20 @@ var android_paths = AndroidPaths{};`
                 module.linkSystemLibrary("m", .{});
             }
         },`
+  const libraries = "    return .{ shared, static };"
+  // Global --libc also configures Zig's host build executable. Apply the NDK
+  // descriptor only to the two cross-compiled artifacts.
+  const targetLibc = `    if (target.result.abi == .android) {
+        const libc: std.Build.LazyPath = .{ .cwd_relative = android_paths.libc.? };
+        shared.setLibCFile(libc);
+        static.setLibCFile(libc);
+    }
+${libraries}`
+  if (original.split(libraries).length !== 2) throw new Error("Cannot configure OpenTUI target libc")
   if (!original.includes(pathsBefore)) throw new Error("Cannot add OpenTUI Android path storage")
   if (!original.includes(optionsBefore)) throw new Error("Cannot add OpenTUI Android build options")
   if (!original.includes(translatedBefore)) throw new Error("Cannot patch OpenTUI Android C translation includes")
+  if (!original.includes(abiImport)) throw new Error("Cannot patch OpenTUI context ABI translation")
   if (!original.includes(before)) throw new Error("Cannot patch OpenTUI Android system library handling")
   fs.writeFileSync(
     file,
@@ -330,6 +341,8 @@ var android_paths = AndroidPaths{};`
       .replace(pathsBefore, pathsAfter)
       .replace(optionsBefore, optionsAfter)
       .replace(translatedBefore, translatedAfter)
+      .replace(abiImport, abiImportAfter)
+      .replace(libraries, targetLibc)
       .replace(before, after),
   )
 }
@@ -349,7 +362,7 @@ extern "c" fn pthread_peekjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaq
 extern "c" fn pthread_gettid_np(thread: std.Thread.Handle) c_int;`
   const joinBefore = `        .linux => switch (pthread_tryjoin_np(thread.getHandle(), null)) {
             0 => true,
-            @intFromEnum(std.posix.E.BUSY) => false,
+            @backingInt(std.posix.E.BUSY) => false,
             else => false,
         },`
   const joinAfter = `        .linux => switch (builtin.abi) {
@@ -360,7 +373,7 @@ extern "c" fn pthread_gettid_np(thread: std.Thread.Handle) c_int;`
             },
             else => switch (pthread_tryjoin_np(thread.getHandle(), null)) {
                 0 => true,
-                @intFromEnum(std.posix.E.BUSY) => false,
+                @backingInt(std.posix.E.BUSY) => false,
                 else => false,
             },
         },`

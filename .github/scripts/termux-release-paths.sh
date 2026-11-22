@@ -3,6 +3,7 @@
 set -euo pipefail
 
 readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
+  .github/actions/build-android-bun/action.yml
   .github/actions/build-android-cli/action.yml
   .github/workflows/publish.yml
   .github/workflows/test.yml
@@ -11,7 +12,6 @@ readonly -a TERMUX_RELEASE_WORKFLOW_PATHS=(
   .github/workflows/termux-release-checkpoint.yml
   .github/workflows/termux-release-ci.yml
   .github/workflows/termux-release-deploy.yml
-  .github/workflows/termux-release-watch.yml
 )
 
 readonly -a TERMUX_RELEASE_SCRIPT_PATHS=(
@@ -40,6 +40,8 @@ readonly -a TERMUX_RELEASE_AUTOMATION_PATHS=(
 
 readonly -a TERMUX_CHECKPOINT_RELEASE_ONLY_PATHS=(
   "${TERMUX_RELEASE_AUTOMATION_PATHS[@]}"
+  # The watch now calls the V2 pipeline from dev. Strip copies from old release branches.
+  .github/workflows/termux-release-watch.yml
   .github/termux-release.json
   .termux-release-automation
 )

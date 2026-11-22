@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       upstream_tag:
-        description: "Specific upstream version or tag to process, for example 1.17.13 or v1.17.13"
+        description: "Mirror a specific upstream tag (e.g. v2.3.2), or leave blank for the newest stable V1 and V2"
         required: false
         type: string
         default: ""
@@ -53,6 +53,7 @@ defaults:
 
 jobs:
   look-for-newer-release:
+    name: Select upstream V1 release
     if: github.repository == 'wallentx/opencode-termux'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -71,6 +72,7 @@ jobs:
       body: ${{ steps.upstream.outputs.body }}
     env:
       UPSTREAM_REPO: anomalyco/opencode
+      RELEASE_MAJOR: "1"
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -106,6 +108,40 @@ jobs:
           REQUESTED_TAG: ${{ inputs.upstream_tag }}
           BYPASS_PRIOR_RELEASE_TRAIN: ${{ inputs.bypass_prior_release_train || false }}
         run: bash .github/scripts/termux-select-release.sh
+
+  select-v2:
+    name: Select upstream V2 release
+    if: github.repository == 'wallentx/opencode-termux'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      selected: ${{ steps.upstream.outputs.selected }}
+      upstream_tag: ${{ steps.upstream.outputs.upstream_tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check for a missing V2 mirror
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPO: anomalyco/opencode
+          RELEASE_MAJOR: "2"
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+          BYPASS_PRIOR_RELEASE_TRAIN: "false"
+        run: bash .github/scripts/termux-select-release.sh
+
+  mirror-v2:
+    needs: select-v2
+    if: needs.select-v2.outputs.selected == 'true'
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/termux-v2-release.yml
+    secrets:
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+    with:
+      upstream_tag: ${{ needs.select-v2.outputs.upstream_tag }}
 
   create-release-pr:
     needs: look-for-newer-release

@@ -1,32 +1,35 @@
-name: termux-v2-weekly
+name: termux-v2-release
 
 on:
   pull_request:
     branches:
       - dev
     paths:
+      - .github/actions/build-android-bun/action.yml
       - .github/actions/build-v2-android-cli/action.yml
       - .github/scripts/termux-patch-v2-build.ts
+      - .github/scripts/termux-select-release.sh
+      - .github/scripts/termux-publish-v2-release.sh
       - .github/scripts/termux-v2-opentui-android.ts
       - .github/scripts/termux-v2-opentui-android.test.ts
       - .github/workflows/termux-android-artifact-smoke.yml
-      - .github/workflows/termux-v2-weekly.yml
-  schedule:
-    - cron: "17 9 * * 1"
-  workflow_dispatch:
+      - .github/workflows/termux-v2-release.yml
+  workflow_call:
     inputs:
-      upstream_ref:
-        description: "anomalyco/opencode ref to build"
-        required: false
-        default: v2
+      upstream_tag:
+        description: "Published upstream V2 release tag, for example v2.3.2"
+        required: true
         type: string
+    secrets:
+      APP_PRIVATE_KEY:
+        required: true
 
 permissions:
   actions: read
   contents: read
 
 concurrency:
-  group: termux-v2-weekly-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || 'release' }}
+  group: termux-v2-release-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || inputs.upstream_tag }}
   cancel-in-progress: false
 
 defaults:
@@ -45,36 +48,47 @@ jobs:
       build_version: ${{ steps.metadata.outputs.build_version }}
       release_tag: ${{ steps.metadata.outputs.release_tag }}
       source_sha: ${{ steps.metadata.outputs.source_sha }}
+      upstream_tag: ${{ steps.metadata.outputs.upstream_tag }}
       upstream_version: ${{ steps.metadata.outputs.upstream_version }}
     steps:
       - name: Checkout Termux automation
         uses: actions/checkout@v6
 
+      - name: Select upstream V2 release for PR validation
+        if: github.event_name == 'pull_request'
+        id: preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPO: anomalyco/opencode
+          RELEASE_MAJOR: "2"
+          REQUESTED_TAG: ""
+          BYPASS_PRIOR_RELEASE_TRAIN: "false"
+          DISCOVERY_ONLY: "true"
+        run: bash .github/scripts/termux-select-release.sh
+
       - name: Checkout upstream V2
         uses: actions/checkout@v6
         with:
           repository: anomalyco/opencode
-          ref: ${{ inputs.upstream_ref || 'v2' }}
+          ref: refs/tags/${{ inputs.upstream_tag || steps.preview.outputs.upstream_tag }}
           fetch-depth: 1
           path: opencode-v2
 
-      - name: Resolve weekly metadata
+      - name: Verify release identity
         id: metadata
         env:
-          UPSTREAM_REF: ${{ inputs.upstream_ref || 'v2' }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag || steps.preview.outputs.upstream_tag }}
         run: |
           set -euo pipefail
           source_sha="$(git -C opencode-v2 rev-parse HEAD)"
           source_tree="$(git -C opencode-v2 rev-parse 'HEAD^{tree}')"
           upstream_version="$(node -p "require('./opencode-v2/package.json').version")"
-          if [[ ! "$upstream_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Unexpected upstream V2 version: $upstream_version" >&2
+          if [[ ! "$UPSTREAM_TAG" =~ ^v2\.[0-9]+\.[0-9]+$ || "$UPSTREAM_TAG" != "v${upstream_version}" ]]; then
+            echo "Upstream tag $UPSTREAM_TAG does not match V2 package version $upstream_version" >&2
             exit 1
           fi
-          date_tag="$(date -u +%Y.%m.%d)"
-          date_version="$(date -u +%Y%m%d)"
-          build_version="${upstream_version%%-*}-termux.${date_version}"
-          release_tag="v2.${date_tag}-termux"
+          build_version="${upstream_version}-termux"
+          release_tag="${UPSTREAM_TAG}-termux"
           artifact_name="opencode-v2-android-arm64-${release_tag}"
           {
             echo "artifact_name=${artifact_name}"
@@ -83,7 +97,7 @@ jobs:
             echo "release_tag=${release_tag}"
             echo "source_sha=${source_sha}"
             echo "source_tree=${source_tree}"
-            echo "upstream_ref=${UPSTREAM_REF}"
+            echo "upstream_tag=${UPSTREAM_TAG}"
             echo "upstream_version=${upstream_version}"
           } >> "$GITHUB_OUTPUT"
 
@@ -100,7 +114,7 @@ jobs:
           RELEASE_TAG: ${{ steps.metadata.outputs.release_tag }}
           SOURCE_SHA: ${{ steps.metadata.outputs.source_sha }}
           SOURCE_TREE: ${{ steps.metadata.outputs.source_tree }}
-          UPSTREAM_REF: ${{ steps.metadata.outputs.upstream_ref }}
+          UPSTREAM_REF: ${{ steps.metadata.outputs.upstream_tag }}
           UPSTREAM_VERSION: ${{ steps.metadata.outputs.upstream_version }}
         run: |
           set -euo pipefail
@@ -152,14 +166,20 @@ jobs:
       generation: v2
 
   publish:
-    name: Publish V2 weekly release
+    name: Publish V2 release
     needs:
       - build
       - termux-smoke
-    if: github.repository == 'wallentx/opencode-termux' && github.event_name != 'pull_request'
+    if: github.repository == 'wallentx/opencode-termux' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Checkout the tested release automation
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.build.outputs.automation_sha }}
+          persist-credentials: false
+
       - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -167,72 +187,19 @@ jobs:
           client-id: ${{ vars.APP_CLIENT_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - name: Export GitHub App token for gh
-        env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: echo "GH_TOKEN=${APP_TOKEN}" >> "$GITHUB_ENV"
-
       - name: Download V2 Android artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: ${{ needs.build.outputs.artifact_name }}
           path: v2-release
 
-      - name: Publish V2 weekly release
+      - name: Publish tested V2 release
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           AUTOMATION_SHA: ${{ needs.build.outputs.automation_sha }}
           BUILD_VERSION: ${{ needs.build.outputs.build_version }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
-          UPSTREAM_VERSION: ${{ needs.build.outputs.upstream_version }}
-        run: |
-          set -euo pipefail
-          cd v2-release
-          sha256sum -c opencode-android-arm64.tar.gz.sha256
-          notes="$RUNNER_TEMP/termux-v2-weekly-notes.md"
-          {
-            echo "Weekly Termux build from anomalyco/opencode's V2 branch."
-            echo
-            echo "- Upstream version: \`${UPSTREAM_VERSION}\`"
-            echo "- Upstream source: \`${SOURCE_SHA}\`"
-            echo "- Embedded version: \`${BUILD_VERSION}\`"
-            echo "- Automation source: \`${AUTOMATION_SHA}\`"
-            echo
-            echo "## Checks"
-            echo
-            echo "- Android source build completed"
-            echo "- Android ELF inspection completed"
-            echo "- Termux runtime and TUI smoke completed"
-            echo
-            echo "## Checksum"
-            echo
-            sed 's/^/`/' opencode-android-arm64.tar.gz.sha256 | sed 's/$/`/'
-          } > "$notes"
-
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" \
-              opencode-android-arm64.tar.gz \
-              opencode-android-arm64.tar.gz.sha256 \
-              provenance.json \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
-            gh release edit "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$AUTOMATION_SHA" \
-              --title "$RELEASE_TAG" \
-              --notes-file "$notes" \
-              --prerelease \
-              --latest=false
-            exit 0
-          fi
-
-          gh release create "$RELEASE_TAG" \
-            opencode-android-arm64.tar.gz \
-            opencode-android-arm64.tar.gz.sha256 \
-            provenance.json \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$AUTOMATION_SHA" \
-            --title "$RELEASE_TAG" \
-            --notes-file "$notes" \
-            --prerelease \
-            --latest=false
+          UPSTREAM_TAG: ${{ needs.build.outputs.upstream_tag }}
+        working-directory: v2-release
+        run: bash ../.github/scripts/termux-publish-v2-release.sh
