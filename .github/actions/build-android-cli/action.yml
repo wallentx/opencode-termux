@@ -59,7 +59,7 @@ runs:
         smoke_dir="packages/opencode/dist/android-smoke"
         mkdir -p "$smoke_dir"
 
-        test -x "$binary"
+        [[ -f "$binary" && ! -L "$binary" && -x "$binary" ]]
         file "$binary" | tee "$smoke_dir/file.txt"
         readelf -h "$binary" | tee "$smoke_dir/readelf-header.txt"
         readelf -l "$binary" | tee "$smoke_dir/readelf-program-headers.txt"
@@ -96,4 +96,4 @@ runs:
     - name: Pack Android artifact
       shell: bash
       working-directory: packages/opencode/dist/opencode-android-arm64/bin
-      run: tar -czf ../../opencode-android-arm64.tar.gz *
+      run: tar -czf ../../opencode-android-arm64.tar.gz -- opencode

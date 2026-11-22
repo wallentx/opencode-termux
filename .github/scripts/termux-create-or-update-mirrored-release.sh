@@ -19,6 +19,7 @@ set -euo pipefail
 
 promoted_dir="${PROMOTED_DIR:-promoted}"
 asset_path="${promoted_dir}/opencode-android-arm64.tar.gz"
+python3 "$(dirname -- "${BASH_SOURCE[0]}")/termux-verify-android-archive.py" "${asset_path}"
 body_path="${RUNNER_TEMP}/termux-release-body.md"
 upstream_body_path="${RUNNER_TEMP}/termux-upstream-release-body.md"
 

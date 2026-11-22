@@ -122,7 +122,7 @@ runs:
         smoke_dir="$SOURCE_DIR/packages/cli/dist/android-smoke"
         mkdir -p "$smoke_dir"
 
-        test -x "$binary"
+        [[ -f "$binary" && ! -L "$binary" && -x "$binary" ]]
         test -f "$opentui_lib"
         file "$binary" | tee "$smoke_dir/file.txt"
         readelf -h "$binary" | tee "$smoke_dir/readelf-header.txt"
@@ -153,4 +153,4 @@ runs:
       run: |
         set -euo pipefail
         cd "$SOURCE_DIR/packages/cli/dist/cli-android-arm64/bin"
-        tar -czf ../../opencode-android-arm64.tar.gz *
+        tar -czf ../../opencode-android-arm64.tar.gz -- opencode

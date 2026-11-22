@@ -73,7 +73,7 @@ jobs:
           find "$DOWNLOAD_DIR" -maxdepth 4 -type f -print >&2
           exit 1
         fi
-        tar -tzf "$archive"
+        python3 .github/scripts/termux-verify-android-archive.py "$archive"
 
         if [[ "$OPENCODE_GENERATION" == "v1" ]]; then
           {
@@ -102,24 +102,8 @@ jobs:
         tar -xzf "$archive" -C opencode-smoke
         find opencode-smoke -maxdepth 3 -type f -print | tee termux-smoke-output/files.txt
 
-        binary=""
-        for candidate in \
-          opencode-smoke/opencode \
-          opencode-smoke/bin/opencode \
-          opencode-smoke/opencode-android-arm64/bin/opencode
-        do
-          if [[ -x "$candidate" ]]; then
-            binary="$candidate"
-            break
-          fi
-        done
-
-        if [[ -z "$binary" ]]; then
-          echo "Could not find executable opencode in $archive." >&2
-          exit 1
-        fi
-
-        binary="$(realpath "$binary")"
+        binary="$(realpath opencode-smoke/opencode)"
+        test -x "$binary"
         readelf_tool="$(command -v readelf || command -v greadelf)"
         file "$binary" | tee termux-smoke-output/file.txt
         "$readelf_tool" -h "$binary" | tee termux-smoke-output/readelf-header.txt
