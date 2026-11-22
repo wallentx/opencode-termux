@@ -1,0 +1,12 @@
+self-hosted-runner:
+  labels:
+    - blacksmith-4vcpu-ubuntu-2404
+    - blacksmith-4vcpu-ubuntu-2404-arm
+    - blacksmith-4vcpu-windows-2025
+
+config-variables: null
+
+paths:
+  .github/workflows/docs-locale-sync.yml:
+    ignore:
+      - 'constant expression "false" in condition'

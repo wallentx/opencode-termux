@@ -36,6 +36,7 @@ const watcher = lazy((): typeof import("@parcel/watcher") | undefined => {
 })
 
 function getBackend() {
+  if (process.platform === "android") return "inotify"
   if (process.platform === "win32") return "windows"
   if (process.platform === "darwin") return "fs-events"
   if (process.platform === "linux") return "inotify"

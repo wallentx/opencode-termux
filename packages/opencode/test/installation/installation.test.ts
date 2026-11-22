@@ -111,6 +111,29 @@ describe("installation", () => {
         return jsonResponse({ version })
       })
 
+    for (const method of ["curl", "unknown"] as const) {
+      const calls: string[] = []
+      testEffect(
+        testLayer((request) => {
+          calls.push(request.url)
+          return jsonResponse({ tag_name: "v1.99.0-termux" })
+        }),
+      ).effect(`reads custom fork releases for ${method} installs`, () =>
+        Effect.gen(function* () {
+          const original = process.env.OPENCODE_RELEASE_REPO
+          process.env.OPENCODE_RELEASE_REPO = "wallentx/opencode-termux"
+          try {
+            calls.length = 0
+            expect(yield* Installation.use.latest(method)).toBe("1.99.0-termux")
+            expect(calls).toEqual(["https://api.github.com/repos/wallentx/opencode-termux/releases/latest"])
+          } finally {
+            if (original === undefined) delete process.env.OPENCODE_RELEASE_REPO
+            else process.env.OPENCODE_RELEASE_REPO = original
+          }
+        }),
+      )
+    }
+
     const methods = ["curl", "yarn", "unknown", "npm", "bun", "pnpm", "scoop", "choco"] as const
     for (const method of methods) {
       const calls: string[] = []
@@ -426,6 +449,35 @@ describe("installation", () => {
       }),
     )
 
+    const forkMajorCalls: string[] = []
+    testEffect(
+      testLayer(
+        (request) => {
+          forkMajorCalls.push(request.url)
+          return new Response("unexpected", { status: 200 })
+        },
+        (cmd) => {
+          forkMajorCalls.push(cmd)
+          return ""
+        },
+      ),
+    ).effect("refuses the upstream OpenCode 2 installer for custom curl releases", () =>
+      Effect.gen(function* () {
+        const original = process.env.OPENCODE_RELEASE_REPO
+        process.env.OPENCODE_RELEASE_REPO = "wallentx/opencode-termux"
+        try {
+          forkMajorCalls.length = 0
+          const error = yield* Effect.flip(Installation.use.upgradeMajor("curl"))
+          expect(error).toBeInstanceOf(Installation.UpgradeFailedError)
+          expect(error.stderr).toContain(Installation.MAJOR_INSTRUCTIONS)
+          expect(forkMajorCalls).toEqual([])
+        } finally {
+          if (original === undefined) delete process.env.OPENCODE_RELEASE_REPO
+          else process.env.OPENCODE_RELEASE_REPO = original
+        }
+      }),
+    )
+
     const chocoCalls: string[] = []
     testEffect(
       testLayer(
@@ -441,6 +493,37 @@ describe("installation", () => {
         const error = yield* Effect.flip(Installation.use.upgradeMajor("choco"))
         expect(error.stderr).toContain(Installation.MAJOR_INSTRUCTIONS)
         expect(chocoCalls).toEqual([])
+      }),
+    )
+
+    const installCalls: string[] = []
+    testEffect(
+      testLayer(
+        (request) => {
+          installCalls.push(request.url)
+          return new Response("install script", { status: 200 })
+        },
+        (cmd, args) => {
+          if (cmd === "bash" && args[0] === "--version") return "GNU bash"
+          if (cmd === "bash") return "ok"
+          return ""
+        },
+      ),
+    ).effect("uses configured install URL for curl upgrade", () =>
+      Effect.gen(function* () {
+        const originalUrl = process.env.OPENCODE_INSTALL_URL
+        const originalRepo = process.env.OPENCODE_RELEASE_REPO
+        process.env.OPENCODE_INSTALL_URL = "https://example.test/install"
+        process.env.OPENCODE_RELEASE_REPO = "wallentx/opencode-termux"
+        try {
+          yield* Installation.use.upgrade("curl", "1.17.15-termux")
+          expect(installCalls).toContain("https://example.test/install")
+        } finally {
+          if (originalUrl === undefined) delete process.env.OPENCODE_INSTALL_URL
+          else process.env.OPENCODE_INSTALL_URL = originalUrl
+          if (originalRepo === undefined) delete process.env.OPENCODE_RELEASE_REPO
+          else process.env.OPENCODE_RELEASE_REPO = originalRepo
+        }
       }),
     )
   })

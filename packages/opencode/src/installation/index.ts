@@ -104,6 +104,23 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/In
 
 export const use = serviceUse(Service)
 
+const UPSTREAM_RELEASE_REPO = "anomalyco/opencode"
+const TERMUX_RELEASE_REPO = "wallentx/opencode-termux"
+
+function releaseRepo() {
+  if (process.env.OPENCODE_RELEASE_REPO) return process.env.OPENCODE_RELEASE_REPO
+  if (process.platform === "android" || InstallationVersion.endsWith("-termux")) return TERMUX_RELEASE_REPO
+  return UPSTREAM_RELEASE_REPO
+}
+
+function installScriptUrl(target: string) {
+  if (process.env.OPENCODE_INSTALL_URL) return process.env.OPENCODE_INSTALL_URL
+  if (releaseRepo() === TERMUX_RELEASE_REPO) {
+    return `https://raw.githubusercontent.com/${TERMUX_RELEASE_REPO}/v${target}/install`
+  }
+  return "https://opencode.ai/install"
+}
+
 const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -165,14 +182,14 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
 
     const upgradeCurl = Effect.fnUntraced(
       function* (target: string) {
-        const response = yield* httpOk.execute(HttpClientRequest.get("https://opencode.ai/install"))
+        const response = yield* httpOk.execute(HttpClientRequest.get(installScriptUrl(target)))
         const body = yield* response.text
         const bodyBytes = new TextEncoder().encode(body)
         const shell = yield* upgradeScriptShell()
         const result = yield* appProcess.run(
           ChildProcess.make(shell, [], {
             stdin: Stream.make(bodyBytes),
-            env: { VERSION: target },
+            env: { VERSION: target, OPENCODE_RELEASE_REPO: releaseRepo() },
             extendEnv: true,
           }),
         )
@@ -258,6 +275,7 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
       }),
       method: Effect.fn("Installation.method")(function* () {
         if (process.execPath.includes(path.join(".opencode", "bin"))) return "curl" as Method
+        if (process.execPath.includes(path.join(".opencode", "opencode"))) return "curl" as Method
         if (process.execPath.includes(path.join(".local", "bin"))) return "curl" as Method
         const exec = process.execPath.toLowerCase()
 
@@ -296,6 +314,22 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         const method = installMethod || (yield* result.method())
         // Homebrew Core's opencode formula is OpenCode 2, so `brew upgrade` can't deliver an OpenCode 1 update.
         if (method === "brew" && !(yield* getBrewFormula()).includes("/")) return InstallationVersion
+        if ((method === "curl" || method === "unknown") && releaseRepo() !== UPSTREAM_RELEASE_REPO) {
+          return yield* Effect.gen(function* () {
+            const response = yield* httpOk.execute(
+              HttpClientRequest.get(`https://api.github.com/repos/${releaseRepo()}/releases/latest`).pipe(
+                HttpClientRequest.acceptJson,
+              ),
+            )
+            const data = yield* HttpClientResponse.schemaBodyJson(
+              Schema.Struct({ tag_name: Schema.String }),
+            )(response)
+            const found = data.tag_name.replace(/^v/, "")
+            if (!isUpdate(InstallationVersion, found)) return InstallationVersion
+            return found
+          }).pipe(Effect.timeout("10 seconds"))
+        }
+
         return yield* Effect.gen(function* () {
           const found = yield* npmLatest()
           if (!isUpdate(InstallationVersion, found)) return InstallationVersion
@@ -376,6 +410,10 @@ const layer: Layer.Layer<Service, never, HttpClient.HttpClient | AppProcess.Serv
         yield* text([process.execPath, "--version"])
       }),
       upgradeMajor: Effect.fn("Installation.upgradeMajor")(function* (m: Method) {
+        if (m === "curl" && releaseRepo() !== UPSTREAM_RELEASE_REPO)
+          return yield* new UpgradeFailedError({
+            stderr: `OpenCode 2 can't be installed automatically from ${releaseRepo()} with curl. See ${MAJOR_INSTRUCTIONS}`,
+          })
         const outcome = yield* majorUpgrade(m)
         if (outcome.code !== 0) return yield* new UpgradeFailedError({ stderr: upgradeFailure(m, outcome) })
         yield* Effect.logInfo("upgraded major", { method: m, stdout: outcome.stdout, stderr: outcome.stderr })

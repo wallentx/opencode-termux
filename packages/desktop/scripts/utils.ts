@@ -50,6 +50,16 @@ export const CLI_BINARIES: Array<{ rustTarget: string; package: string; os: stri
     os: "linux",
     cpu: "arm64",
   },
+  {
+    rustTarget: "aarch64-linux-android",
+    ocBinary: "opencode-android-arm64",
+    assetExt: "tar.gz",
+  },
+  {
+    rustTarget: "aarch64-linux-android",
+    ocBinary: "opencode-android-arm64",
+    assetExt: "tar.gz",
+  },
 ]
 
 export const RUST_TARGET = Bun.env.RUST_TARGET
