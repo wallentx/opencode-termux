@@ -167,9 +167,10 @@ await $`rm -rf dist`
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
-  await $`bun install --os="*" --cpu="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
-  await $`bun install --os="*" --cpu="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
-  await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
+  // Bun 1.4.4 skips native packages for the other libc by default, but the musl targets need them.
+  await $`bun install --os="*" --cpu="*" --libc="*" @opentui/core@${pkg.dependencies["@opentui/core"]}`
+  await $`bun install --os="*" --cpu="*" --libc="*" @parcel/watcher@${pkg.dependencies["@parcel/watcher"]}`
+  await $`bun install --os="*" --cpu="*" --libc="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
 if (targets.some((item) => item.os === "android")) {
   await import("./opentui-android.ts")
@@ -231,13 +232,13 @@ for (const item of targets) {
     await $`codesign --force --sign - dist/${name}/bin/opencode`
   }
 
-  if (item.os === "android") {
-    const androidElf = await import("./patch-android-elf.ts")
-    await androidElf.patchAndroidElf(`dist/${name}/bin/opencode`)
-  }
-
   // Smoke test: only run if binary is for current platform
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
+  if (
+    !process.argv.includes("--skip-smoke") &&
+    item.os === process.platform &&
+    item.arch === process.arch &&
+    !item.abi
+  ) {
     const binaryPath = `dist/${name}/bin/opencode`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {

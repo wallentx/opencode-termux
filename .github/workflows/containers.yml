@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build:
-    if: github.repository == 'anomalyco/opencode'
+    if: github.repository == 'anomalyco/opencode' && (github.ref == 'refs/heads/v1')
     runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}
     env:
       REGISTRY: ghcr.io/${{ github.repository_owner }}

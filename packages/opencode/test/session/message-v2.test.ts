@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { APICallError } from "ai"
+import { createXai } from "@ai-sdk/xai"
+import { APICallError, generateText, type ModelMessage } from "ai"
 import { MessageV2 } from "../../src/session/message-v2"
 import { ProviderTransform } from "@/provider/transform"
 import type { Provider } from "@/provider/provider"
@@ -492,6 +493,195 @@ describe("session.message-v2.toModelMessage", () => {
         ],
       },
     })
+  })
+
+  test("sends tool-result images to xai responses as input_image", async () => {
+    const xaiModel: Provider.Model = {
+      ...model,
+      id: ModelV2.ID.make("grok-4.7"),
+      providerID: ProviderV2.ID.make("xai"),
+      api: {
+        id: "grok-4.7",
+        url: "https://api.x.ai/v1",
+        npm: "@ai-sdk/xai",
+      },
+      capabilities: {
+        ...model.capabilities,
+        attachment: true,
+        input: {
+          ...model.capabilities.input,
+          image: true,
+        },
+      },
+    }
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64")
+    const userID = "m-user-xai"
+    const assistantID = "m-assistant-xai"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [
+          {
+            ...basePart(userID, "u1-xai"),
+            type: "text",
+            text: "describe the diagram",
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1-xai"),
+            type: "tool",
+            callID: "call-xai-1",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/diagram.png" },
+              output: "Image read successfully",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+              attachments: [
+                {
+                  ...basePart(assistantID, "file-xai-1"),
+                  type: "file",
+                  mime: "image/png",
+                  filename: "diagram.png",
+                  url: `data:image/png;base64,${png}`,
+                },
+              ],
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const bodies: Record<string, unknown>[] = []
+    const xai = createXai({
+      apiKey: "test",
+      fetch: Object.assign(
+        async (url: RequestInfo | URL, init?: RequestInit) => {
+          bodies.push(await new Request(url, init).json())
+          return new Response("{}", { status: 400 })
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    })
+    await generateText({
+      model: xai.responses(xaiModel.api.id),
+      messages: ProviderTransform.message(await MessageV2.toModelMessages(input, xaiModel), xaiModel, {}),
+      providerOptions: { xai: { promptCacheKey: "session", reasoningEffort: "xhigh" } },
+      maxRetries: 0,
+    }).catch(() => undefined)
+
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0].prompt_cache_key).toBe("session")
+    expect(bodies[0].reasoning).toEqual({ effort: "xhigh" })
+    expect(bodies[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "call-xai-1",
+      output: [
+        { type: "input_text", text: "Image read successfully" },
+        { type: "input_image", image_url: `data:image/png;base64,${png}` },
+      ],
+    })
+  })
+
+  test("drops tool-result images xai rejects but keeps png and webp", async () => {
+    const xaiModel: Provider.Model = {
+      ...model,
+      id: ModelV2.ID.make("grok-4.7"),
+      providerID: ProviderV2.ID.make("xai"),
+      api: {
+        id: "grok-4.7",
+        url: "https://api.x.ai/v1",
+        npm: "@ai-sdk/xai",
+      },
+      capabilities: {
+        ...model.capabilities,
+        attachment: true,
+        input: {
+          ...model.capabilities.input,
+          image: true,
+        },
+      },
+    }
+    const images = [
+      { mime: "image/png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64") },
+      { mime: "image/gif", data: Buffer.from("GIF89a").toString("base64") },
+      { mime: "image/webp", data: Buffer.from("RIFFWEBP").toString("base64") },
+    ]
+    const userID = "m-user-xai-gif"
+    const assistantID = "m-assistant-xai-gif"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [
+          {
+            ...basePart(userID, "u1-xai-gif"),
+            type: "text",
+            text: "describe the images",
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1-xai-gif"),
+            type: "tool",
+            callID: "call-xai-gif",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/images" },
+              output: "Images read successfully",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+              attachments: images.map((image, index) => ({
+                ...basePart(assistantID, `file-xai-gif-${index}`),
+                type: "file" as const,
+                mime: image.mime,
+                filename: `image-${index}`,
+                url: `data:${image.mime};base64,${image.data}`,
+              })),
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const bodies: Record<string, unknown>[] = []
+    const xai = createXai({
+      apiKey: "test",
+      fetch: Object.assign(
+        async (url: RequestInfo | URL, init?: RequestInit) => {
+          bodies.push(await new Request(url, init).json())
+          return new Response("{}", { status: 400 })
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    })
+    await generateText({
+      model: xai.responses(xaiModel.api.id),
+      messages: ProviderTransform.message(await MessageV2.toModelMessages(input, xaiModel), xaiModel, {}),
+      maxRetries: 0,
+    }).catch(() => undefined)
+
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0].input).toContainEqual({
+      type: "function_call_output",
+      call_id: "call-xai-gif",
+      output: [
+        { type: "input_text", text: "Images read successfully" },
+        { type: "input_image", image_url: `data:image/png;base64,${images[0].data}` },
+        { type: "input_image", image_url: `data:image/webp;base64,${images[2].data}` },
+      ],
+    })
+    expect(JSON.stringify(bodies[0])).not.toContain("image/gif")
   })
 
   test("moves bedrock pdf tool-result media into a separate user message", async () => {
@@ -1363,6 +1553,132 @@ describe("session.message-v2.toModelMessage", () => {
   })
 })
 
+describe("session.message-v2.boundImages", () => {
+  const image = (mib: number, filename: string): ModelMessage => ({
+    role: "user",
+    content: [{ type: "file", mediaType: "image/png", filename, data: "a".repeat(mib * 1024 * 1024) }],
+  })
+  const removed = (messages: ModelMessage[]) =>
+    messages.filter((message) => (message.content as Array<{ type: string }>)[0]?.type === "text").length
+
+  test("preserves images below the trigger", () => {
+    const messages = [image(1, "small.png")]
+    expect(MessageV2.boundImages(messages)).toBe(messages)
+  })
+
+  test("replaces oldest images until the retained payload reaches the target", () => {
+    const text: ModelMessage = { role: "user", content: [{ type: "text", text: "plain" }] }
+    const third = image(9, "third.png")
+    const messages = [image(9, "first.png"), text, image(9, "second.png"), third]
+    const result = MessageV2.boundImages(messages)
+
+    expect(result[0]?.content).toEqual([{ type: "text", text: expect.stringContaining("image was removed") }])
+    expect(result[1]).toBe(text)
+    expect(result[2]?.content).toEqual([{ type: "text", text: expect.stringContaining("image was removed") }])
+    expect(result[3]).toBe(third)
+  })
+
+  test("keeps the replaced prefix stable as new images arrive, so the prompt cache survives", () => {
+    const history = Array.from({ length: 9 }, (_, i) => image(3, `${i}.png`))
+
+    // 27 MiB passes the 25 MiB trigger: the oldest four go, leaving 15 MiB.
+    expect(removed(MessageV2.boundImages(history))).toBe(4)
+    // The cut holds until the kept payload passes the trigger again.
+    expect(removed(MessageV2.boundImages([...history, image(3, "9.png")]))).toBe(4)
+    expect(removed(MessageV2.boundImages([...history, ...[9, 10, 11].map((i) => image(3, `${i}.png`))]))).toBe(4)
+    expect(removed(MessageV2.boundImages([...history, ...[9, 10, 11, 12].map((i) => image(3, `${i}.png`))]))).toBe(8)
+  })
+
+  test("replaces images nested in tool results", () => {
+    const data = "a".repeat(13 * 1024 * 1024)
+    const result = MessageV2.boundImages([
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-1",
+            toolName: "read",
+            output: {
+              type: "content",
+              value: [
+                { type: "media", mediaType: "image/png", data },
+                { type: "media", mediaType: "image/png", data },
+              ],
+            },
+          },
+        ],
+      },
+    ])
+
+    expect(result[0]?.content).toMatchObject([
+      {
+        type: "tool-result",
+        output: { type: "content", value: [{ type: "text" }, { type: "media", mediaType: "image/png" }] },
+      },
+    ])
+  })
+
+  test("bounds tool-result images re-sent as synthetic user messages for OpenAI-compatible providers", async () => {
+    const compatibleModel: Provider.Model = {
+      ...model,
+      api: { ...model.api, npm: "@ai-sdk/openai-compatible" },
+      capabilities: { ...model.capabilities, attachment: true, input: { ...model.capabilities.input, image: true } },
+    }
+    const userID = "m-user-bound"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [{ ...basePart(userID, "u1-bound"), type: "text", text: "read the screenshots" }] as SessionV1.Part[],
+      },
+      ...[1, 2].map((turn) => {
+        const assistantID = `m-assistant-bound-${turn}`
+        return {
+          info: assistantInfo(assistantID, userID),
+          parts: [
+            {
+              ...basePart(assistantID, `a-bound-${turn}`),
+              type: "tool",
+              callID: `call-bound-${turn}`,
+              tool: "read",
+              state: {
+                status: "completed",
+                input: { filePath: `/tmp/screenshot-${turn}.png` },
+                output: "Image read successfully",
+                title: "Read",
+                metadata: {},
+                time: { start: 0, end: 1 },
+                attachments: [
+                  {
+                    ...basePart(assistantID, `file-bound-${turn}`),
+                    type: "file",
+                    mime: "image/png",
+                    filename: `screenshot-${turn}.png`,
+                    url: `data:image/png;base64,${"a".repeat(13 * 1024 * 1024)}`,
+                  },
+                ],
+              },
+            },
+          ] as SessionV1.Part[],
+        }
+      }),
+    ]
+
+    const synthetic = (await MessageV2.toModelMessages(input, compatibleModel)).filter(
+      (message) =>
+        message.role === "user" &&
+        Array.isArray(message.content) &&
+        message.content[0]?.type === "text" &&
+        message.content[0].text === MessageV2.SYNTHETIC_ATTACHMENT_PROMPT,
+    )
+
+    expect(synthetic.map((message) => message.content.slice(1))).toMatchObject([
+      [{ type: "text", text: expect.stringContaining("image was removed") }],
+      [{ type: "file", filename: "screenshot-2.png" }],
+    ])
+  })
+})
+
 describe("session.message-v2.fromError", () => {
   test("serializes context_length_exceeded as ContextOverflowError", () => {
     const input = {
@@ -1452,6 +1768,8 @@ describe("session.message-v2.fromError", () => {
       "Please reduce the length of the messages or completion",
       "400 status code (no body)",
       "413 status code (no body)",
+      "Request body too large",
+      "multimodal data size is too large",
     ]
 
     cases.forEach((message) => {

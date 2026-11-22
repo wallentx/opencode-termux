@@ -35,3 +35,4 @@ tsconfig.tsbuildinfo
 .zig-cache/
 .codegraph/
 .codex/
+/artifacts/

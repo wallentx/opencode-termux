@@ -48,7 +48,9 @@ console.log("\n=== ui ===\n")
 await $`bun ./packages/ui/script/publish.ts`
 
 if (Script.release) {
-  await $`bun ./packages/desktop/scripts/finalize-latest-json.ts`
+  // latest.json only serves legacy Tauri desktop installs and needs the retired Tauri updater key.
+  if (process.env.TAURI_SIGNING_PRIVATE_KEY) await $`bun ./packages/desktop/scripts/finalize-latest-json.ts`
+  else console.log("skipping latest.json: TAURI_SIGNING_PRIVATE_KEY is not set")
   await $`bun ./packages/desktop/scripts/finalize-latest-yml.ts`
 }
 
@@ -59,12 +61,13 @@ if (Script.release && !Script.preview) {
   await $`git push origin refs/tags/${tag} --force-with-lease --no-verify`
   await new Promise((resolve) => setTimeout(resolve, 5_000))
   await $`git fetch origin`
-  await $`git checkout -B dev origin/dev`
+  await $`git checkout -B v1 origin/v1`
   await prepareReleaseFiles()
   await $`git commit -am "sync release versions for ${tag}"`
-  await $`git push origin HEAD:dev --no-verify`
+  await $`git push origin HEAD:v1 --no-verify`
 }
 
 if (Script.release) {
-  await $`gh release edit ${tag} --draft=false --repo ${process.env.GH_REPO}`
+  // OpenCode 1 clients resolve updates through GitHub's Latest release, so keep it on 1.x explicitly.
+  await $`gh release edit ${tag} --draft=false --latest --repo ${process.env.GH_REPO}`
 }

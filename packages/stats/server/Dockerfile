@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS base
+FROM oven/bun:1.4.4-alpine AS base
 
 WORKDIR /app
 
@@ -29,6 +29,4 @@ COPY --from=pruner /app/out/full/ ./
 
 WORKDIR /app/packages/stats/server
 
-EXPOSE 3000
-
-CMD ["bun", "src/server.ts"]
+CMD ["bun", "src/stat-sync.ts"]
