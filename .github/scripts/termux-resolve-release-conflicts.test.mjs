@@ -28,6 +28,55 @@ async function inputs() {
   }
 }
 
+test("V1 branch conditions keep both the upstream ref and fork publication guards", () => {
+  const repo = "github.repository == 'anomalyco/opencode'"
+  const runner =
+    "    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}"
+  for (const [name, ref] of [
+    ["containers", "github.ref == 'refs/heads/v1'"],
+    ["publish-github-action", "github.ref_type == 'tag' || github.ref == 'refs/heads/v1'"],
+  ]) {
+    const file = `.github/workflows/${name}.yml`
+    const input = conflict(
+      `    if: ${repo}\n${runner}\n`,
+      `    if: ${ref}\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n`,
+    )
+    assert.equal(resolveFile(file, input), `    if: ${repo} && (${ref})\n${runner}\n`)
+    assert.throws(() => resolveFile(file, input.replace("refs/heads/v1", "refs/heads/custom")), /unsupported/)
+  }
+})
+
+test("V1 honors upstream workflow deletions only for the reviewed index and worktree", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "retired-workflow-"))
+  const file = ".github/workflows/notify-discord.yml"
+  const git = (args, input) => execFileSync("git", args, { cwd: dir, input, encoding: "utf8" }).trim()
+  const run = () => spawnSync("bash", [shell], { cwd: dir, encoding: "utf8" })
+  try {
+    git(["init", "--quiet"])
+    await mkdir(path.join(dir, ".github/workflows"), { recursive: true })
+    const reviewed = await readFixture("notify-discord.yml.blob")
+    const current = git(["hash-object", "-w", "--stdin"], reviewed)
+    const base = git(["hash-object", "-w", "--stdin"], "original upstream workflow\n")
+    const stages = `100644 ${base} 1\t${file}\n100644 ${current} 2\t${file}\n`
+    git(["update-index", "--index-info"], stages)
+    await writeFile(path.join(dir, file), reviewed + "# uncommitted edit\n")
+    assert.match(run().stderr, /working copy differs/)
+    assert.equal(git(["diff", "--name-only", "--diff-filter=U"]), file)
+
+    await writeFile(path.join(dir, file), reviewed)
+    git(["update-index", "--index-info"], `100644 ${base} 3\t${file}\n`)
+    assert.match(run().stderr, /expected upstream deletion/)
+    git(["update-index", "--force-remove", "--", file])
+    git(["update-index", "--index-info"], stages)
+    const result = run()
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(git(["ls-files", "--", file]), "")
+    await assert.rejects(readFile(path.join(dir, file)), { code: "ENOENT" })
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test("resolves all reviewed release conflicts and retains both sides' behavior", async () => {
   const source = await inputs()
   const output = [

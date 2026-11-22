@@ -45,6 +45,8 @@
 
 > [!NOTE]
 > This fork is maintained for Termux/Android compatibility. Fork-specific automation lives on `dev`, while the reusable compatibility patch stack is kept on `termux-target`.
+>
+> Every three hours the release watcher checks the newest stable upstream tag in each major. V1 goes through a release PR. V2 builds directly from its upstream tag and publishes after the Termux smoke test. Both use tags such as `v1.19.6-termux` and `v2.3.2-termux` on the [releases page](https://github.com/wallentx/opencode-termux/releases). V1 keeps the Latest badge. To build a specific version, pass its upstream tag to the [release watcher](https://github.com/wallentx/opencode-termux/actions/workflows/termux-release-watch.yml).
 
 ### Installation
 

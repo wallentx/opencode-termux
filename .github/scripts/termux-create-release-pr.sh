@@ -131,6 +131,30 @@ merge_release_branch() {
     return 1
   fi
 
+  # Bun 1.4 relocates an embedded Android payload itself. Applying the 1.3
+  # workaround as well adds a second relocation and crashes at startup.
+  node --input-type=commonjs <<'NODE'
+const fs = require("node:fs")
+const version = /^bun@(\d+)\.(\d+)\./.exec(require("./package.json").packageManager)
+if (!version) throw new Error("Expected a pinned Bun version after the release merge")
+if (+version[1] === 1 && +version[2] < 4) process.exit(0)
+
+const file = "packages/opencode/script/build.ts"
+const source = fs.readFileSync(file, "utf8")
+if (!source.includes("patchAndroidElf")) process.exit(0)
+const legacy = [
+  '  if (item.os === "android") {',
+  '    const androidElf = await import("./patch-android-elf.ts")',
+  '    await androidElf.patchAndroidElf(`dist/${name}/bin/opencode`)',
+  '  }',
+  '',
+  '',
+].join("\n")
+const updated = source.replace(legacy, "")
+if (updated.includes("patchAndroidElf")) throw new Error("Unrecognized legacy Android ELF patch in " + file)
+fs.writeFileSync(file, updated)
+NODE
+  git add -- packages/opencode/script/build.ts
   git commit -m "chore(termux): merge ${UPSTREAM_TAG} release"
 }
 

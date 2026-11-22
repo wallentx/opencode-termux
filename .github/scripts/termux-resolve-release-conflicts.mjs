@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto"
-import { readFile, writeFile } from "node:fs/promises"
+import { execFileSync } from "node:child_process"
+import { readFile, unlink, writeFile } from "node:fs/promises"
 import { pathToFileURL } from "node:url"
 
 const BUILD_SCRIPT = "packages/opencode/script/build.ts"
@@ -23,7 +24,64 @@ const fingerprints = {
   testsUpstreamUpdatePolicy: "04835dd6286f16ba17565453a59f3939f7781755852471c5348acb9ed206a2a4",
 }
 
-const supported = new Set([BUILD_SCRIPT, ".gitignore", "install", INSTALLATION, INSTALLATION_TEST])
+// Upstream retired these workflows on V1. The reviewed fork blobs carry the
+// old upstream workflow with fork-only job guards. Any further change stops the merge.
+const retired = new Map(
+  Object.entries({
+    "docs-locale-sync": "fb09c2c3a1d3ec982e8a7036aa72c2480f7d8395",
+    "duplicate-issues": "107c2e75b0dbf991974f2bba4be66bbdbc33dafc",
+    generate: "c2f9486b6bea25368deb3a825a3c7045dd3892aa",
+    "nix-hashes": "67abeb3d5a9c0e954441d482b01e352cd6ade6f9",
+    "notify-discord": "7b5e53c5401e87ce929112bf23ff396f638e074b",
+    opencode: "c0b077e69a2296f789fe98ffcd237dfed5da0d83",
+    "pr-management": "117d18a0c6abd901366c8f930a41a693a4a1d80f",
+    "publish-vscode": "1820d224e41fb89fc900198ecdd1420d5cccf38f",
+    review: "4197fc32c876fb84cc5444675beadc6b143b3c1a",
+    triage: "3aea37962686da10a00e4bddca78d8c58e010027",
+  }).map(([name, blob]) => [`.github/workflows/${name}.yml`, blob]),
+)
+
+const refConditions = new Map([
+  [".github/workflows/containers.yml", "github.ref == 'refs/heads/v1'"],
+  [".github/workflows/publish-github-action.yml", "github.ref_type == 'tag' || github.ref == 'refs/heads/v1'"],
+])
+const supported = new Set([
+  BUILD_SCRIPT,
+  ".gitignore",
+  "install",
+  INSTALLATION,
+  INSTALLATION_TEST,
+  ...refConditions.keys(),
+])
+
+function checkRetired(path) {
+  const entries = execFileSync("git", ["ls-files", "-u", "--", path], { encoding: "utf8" })
+    .trimEnd()
+    .split("\n")
+    .map((entry) => entry.split("\t")[0])
+  const blob = retired.get(path)
+  if (entries.length !== 2 || !/^100644 [a-f0-9]+ 1$/.test(entries[0]) || entries[1] !== `100644 ${blob} 2`) {
+    throw new Error(`${path}: expected upstream deletion of the reviewed workflow`)
+  }
+  const worktreeBlob = execFileSync("git", ["hash-object", "--", path], { encoding: "utf8" }).trim()
+  if (worktreeBlob !== blob) throw new Error(`${path}: working copy differs from the reviewed workflow`)
+}
+
+function resolveWorkflow(path, source, conflicts) {
+  const newline = source.includes("\r\n") ? "\r\n" : "\n"
+  const repo = "github.repository == 'anomalyco/opencode'"
+  const ref = refConditions.get(path)
+  const runner =
+    "    runs-on: ${{ github.repository == 'anomalyco/opencode' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-latest' }}"
+  if (
+    conflicts.length !== 1 ||
+    normalize(conflicts[0].current) !== `    if: ${repo}\n${runner}\n` ||
+    normalize(conflicts[0].incoming) !== `    if: ${ref}\n    runs-on: blacksmith-4vcpu-ubuntu-2404\n`
+  ) {
+    throw new Error(`${path}: unsupported upstream workflow conditions`)
+  }
+  return replaceConflicts(source, conflicts, [`    if: ${repo} && (${ref})${newline}${runner}${newline}`])
+}
 
 function normalize(value) {
   return value.replaceAll("\r\n", "\n")
@@ -371,8 +429,9 @@ export function resolveFile(path, source) {
   const normalizedPath = path.startsWith("./") ? path.slice(2) : path
   if (!supported.has(normalizedPath)) throw new Error(`Unsupported release merge conflict: ${path}`)
   const conflicts = parseConflicts(normalizedPath, source)
-  const resolved =
-    normalizedPath === BUILD_SCRIPT
+  const resolved = refConditions.has(normalizedPath)
+    ? resolveWorkflow(normalizedPath, source, conflicts)
+    : normalizedPath === BUILD_SCRIPT
       ? resolveBuild(normalizedPath, source, conflicts)
       : normalizedPath === ".gitignore"
         ? resolveGitignore(normalizedPath, source, conflicts)
@@ -390,14 +449,23 @@ async function main(paths) {
   if (new Set(paths).size !== paths.length) throw new Error("Duplicate conflicted paths are not supported")
   for (const path of paths) {
     const normalizedPath = path.startsWith("./") ? path.slice(2) : path
-    if (!supported.has(normalizedPath)) throw new Error(`Unsupported release merge conflict: ${path}`)
+    if (!supported.has(normalizedPath) && !retired.has(path))
+      throw new Error(`Unsupported release merge conflict: ${path}`)
   }
 
   // Compute the complete set before the first write.
   const resolutions = await Promise.all(
-    paths.map(async (path) => ({ path, source: resolveFile(path, await readFile(path, "utf8")) })),
+    paths.map(async (path) => {
+      if (retired.has(path)) {
+        checkRetired(path)
+        return { path, source: null }
+      }
+      return { path, source: resolveFile(path, await readFile(path, "utf8")) }
+    }),
   )
-  await Promise.all(resolutions.map((item) => writeFile(item.path, item.source)))
+  await Promise.all(
+    resolutions.map((item) => (item.source === null ? unlink(item.path) : writeFile(item.path, item.source))),
+  )
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

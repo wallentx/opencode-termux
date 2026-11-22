@@ -43,6 +43,10 @@ jobs:
         working-directory: packages/opencode
         run: node --test ../../.github/scripts/termux-resolve-release-conflicts.test.mjs ../../.github/scripts/termux-release-installer.test.mjs
 
+      - name: Test release discovery and publication
+        working-directory: packages/opencode
+        run: node --test ../../.github/scripts/termux-select-release.test.mjs ../../.github/scripts/termux-publish-v2-release.test.mjs
+
   build:
     name: Build Android release artifact
     if: github.repository == 'wallentx/opencode-termux' && github.base_ref != 'dev'

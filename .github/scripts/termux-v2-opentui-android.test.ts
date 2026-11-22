@@ -21,12 +21,13 @@ fn addTranslatedCImports(b: *std.Build, module: *std.Build.Module, optimize: std
 
     const yoga_dep = b.dependency("yoga", .{});
     const yoga_translate = b.addTranslateC(.{
-        .root_source_file = yoga_dep.path("yoga/Yoga.h"),
+        .root_source_file = b.path("src/yoga-bridge.h"),
         .target = target,
         .optimize = optimize,
     });
     yoga_translate.addIncludePath(yoga_dep.path(""));
     module.addImport("yoga", yoga_translate.createModule());
+    module.addImport("context_abi_c", header.createModule());
 }
 
 fn addNativeAudioDependencies(b: *std.Build, module: *std.Build.Module, target: std.Build.ResolvedTarget) void {
@@ -48,7 +49,7 @@ fn tryJoinThread(thread: std.Thread) bool {
     return switch (builtin.os.tag) {
         .linux => switch (pthread_tryjoin_np(thread.getHandle(), null)) {
             0 => true,
-            @intFromEnum(std.posix.E.BUSY) => false,
+            @backingInt(std.posix.E.BUSY) => false,
             else => false,
         },
         else => false,
@@ -63,10 +64,6 @@ async function resolveNativeLibraryPath() {
     return "darwin";
   }
 }
-function configureRenderer(config) {
-    if (process.platform === "linux")
-      config.useThread = false;
-}
 `
 
 afterEach(async () => {
@@ -80,8 +77,8 @@ describe("OpenTUI Android build patch", () => {
     expect(await patch(file, host)).toEqual({ code: 0, stderr: "" })
 
     const first = await readFile(file, "utf8")
-    expect(first.match(/defineCMacro\("_Nullable", ""\)/g)).toHaveLength(2)
-    expect(first.match(/opencode-termux-android-v4-api-tls/g)).toHaveLength(1)
+    expect(first.match(/defineCMacro\("_Nullable", ""\)/g)).toHaveLength(3)
+    expect(first.match(/opencode-termux-android-v5-context-abi/g)).toHaveLength(1)
     expect(first).toContain("if (target.result.abi == .android) {\n        // Zig translate-c rejects")
     expect(first).toContain("if (target.result.abi == .android) {\n        // Keep Android header translation")
     const firstHost = await readFile(host, "utf8")
@@ -101,7 +98,7 @@ describe("OpenTUI Android build patch", () => {
     expect(result.stderr).toContain("outdated Android patch")
   })
 
-  test("adds Android runtime loading and disables render threads", async () => {
+  test("adds Android runtime loading to the OpenTUI bundle", async () => {
     const directory = await fixtureDirectory()
     const file = path.join(directory, "chunk.js")
     await writeFile(file, runtime)
@@ -110,7 +107,6 @@ describe("OpenTUI Android build patch", () => {
     const first = await readFile(file, "utf8")
     expect(first).toContain(`android: "libopentui.so"`)
     expect(first).toContain(`import("./android-arm64/index.bun.js")`)
-    expect(first).toContain(`process.platform === "linux" || process.platform === "android"`)
 
     expect(await patchRuntime(directory)).toEqual({ code: 0, stderr: "" })
     expect(await readFile(file, "utf8")).toBe(first)
