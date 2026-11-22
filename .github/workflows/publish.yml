@@ -171,7 +171,6 @@ jobs:
         with:
           name: opencode-android-arm64
           path: |
-            packages/opencode/dist/opencode-android-arm64
             packages/opencode/dist/opencode-android-arm64.tar.gz
             packages/opencode/dist/android-smoke
 

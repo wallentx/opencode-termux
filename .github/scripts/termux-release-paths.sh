@@ -31,6 +31,7 @@ readonly -a TERMUX_RELEASE_SCRIPT_PATHS=(
   .github/scripts/termux-resolve-release-ref.sh
   .github/scripts/termux-select-release.sh
   .github/scripts/termux-validate-gh-env.sh
+  .github/scripts/termux-verify-android-archive.py
 )
 
 readonly -a TERMUX_RELEASE_AUTOMATION_PATHS=(
