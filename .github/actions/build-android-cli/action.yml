@@ -1,0 +1,99 @@
+name: "Build Android CLI"
+description: "Build and smoke-check the Android arm64 opencode artifact"
+inputs:
+  version:
+    description: "Version to embed in the Android CLI"
+    required: true
+  release:
+    description: "Release flag passed to the opencode build"
+    required: false
+    default: ""
+  repo:
+    description: "Repository name passed to the opencode build"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - uses: ./.github/actions/setup-bun
+
+    - name: Setup Zig
+      shell: bash
+      run: |
+        set -euo pipefail
+        zig_version=0.15.2
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) zig_target="x86_64-linux" ;;
+          Linux-ARM64) zig_target="aarch64-linux" ;;
+          *) echo "Unsupported Zig host: ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+        esac
+
+        zig_dir="${RUNNER_TOOL_CACHE:-${RUNNER_TEMP}}/zig/${zig_version}/${zig_target}"
+        if [[ ! -x "${zig_dir}/zig" ]]; then
+          archive="${RUNNER_TEMP}/zig-${zig_target}-${zig_version}.tar.xz"
+          mkdir -p "${zig_dir}"
+          curl -fsSL "https://ziglang.org/download/${zig_version}/zig-${zig_target}-${zig_version}.tar.xz" -o "${archive}"
+          tar -xJf "${archive}" -C "${zig_dir}" --strip-components=1
+        fi
+
+        echo "${zig_dir}" >> "${GITHUB_PATH}"
+        "${zig_dir}/zig" version
+
+    - name: Build Android Bun runtime with FFI
+      uses: ./.github/actions/build-android-bun
+
+    - name: Build Android CLI
+      shell: bash
+      run: ./packages/opencode/script/build.ts --target=android-arm64
+      env:
+        OPENCODE_VERSION: ${{ inputs.version }}
+        OPENCODE_RELEASE: ${{ inputs.release }}
+        GH_REPO: ${{ inputs.repo }}
+
+    - name: Smoke Android CLI artifact
+      shell: bash
+      run: |
+        set -euo pipefail
+        artifact_dir="packages/opencode/dist/opencode-android-arm64"
+        binary="${artifact_dir}/bin/opencode"
+        opentui_lib="packages/opencode/node_modules/@opentui/core/android-arm64/libopentui.so"
+        smoke_dir="packages/opencode/dist/android-smoke"
+        mkdir -p "$smoke_dir"
+
+        test -x "$binary"
+        file "$binary" | tee "$smoke_dir/file.txt"
+        readelf -h "$binary" | tee "$smoke_dir/readelf-header.txt"
+        readelf -l "$binary" | tee "$smoke_dir/readelf-program-headers.txt"
+        readelf -S "$binary" > "$smoke_dir/readelf-sections.txt"
+        readelf -d "$binary" | tee "$smoke_dir/readelf-dynamic.txt"
+
+        grep -q "Machine:.*AArch64" "$smoke_dir/readelf-header.txt"
+        grep -q "Type:.*DYN" "$smoke_dir/readelf-header.txt"
+        if grep -E "Requesting program interpreter: .*(ld-linux|ld-musl)" "$smoke_dir/readelf-program-headers.txt"; then
+          echo "Android artifact unexpectedly references a Linux ELF interpreter." >&2
+          exit 1
+        fi
+        if grep -E "Shared library: \\[(libc\\.so\\.6|ld-linux|ld-musl)" "$smoke_dir/readelf-dynamic.txt"; then
+          echo "Android artifact unexpectedly links Linux libc/runtime libraries." >&2
+          exit 1
+        fi
+
+        test -f "$opentui_lib"
+        file "$opentui_lib" | tee "$smoke_dir/opentui-file.txt"
+        readelf -d "$opentui_lib" | tee "$smoke_dir/opentui-readelf-dynamic.txt"
+        readelf -Ws "$opentui_lib" > "$smoke_dir/opentui-readelf-symbols.txt"
+        readelf -r "$opentui_lib" > "$smoke_dir/opentui-readelf-relocs.txt"
+
+        if grep -E "Shared library: \\[(libc\\.so\\.6|ld-linux|ld-musl|libstdc\\+\\+|libgcc_s)" "$smoke_dir/opentui-readelf-dynamic.txt"; then
+          echo "OpenTUI Android library unexpectedly links non-Android runtime libraries." >&2
+          exit 1
+        fi
+        if grep -E "Shared library: \\[(libc\\+\\+|libc\\+\\+_shared|libunwind)\\.so" "$smoke_dir/opentui-readelf-dynamic.txt"; then
+          echo "OpenTUI Android library requires an unbundled C++/unwind runtime." >&2
+          exit 1
+        fi
+        grep -E " (YGNode|facebook4yoga|yogaNode)" "$smoke_dir/opentui-readelf-symbols.txt" | head -80 || true
+
+    - name: Pack Android artifact
+      shell: bash
+      working-directory: packages/opencode/dist/opencode-android-arm64/bin
+      run: tar -czf ../../opencode-android-arm64.tar.gz *
