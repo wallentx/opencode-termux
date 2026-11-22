@@ -37,12 +37,6 @@ replace(
 )
 
 replace(
-  `const appArchive = path.join(dir, ".cache", "bun-app-archive.bin")`,
-  `if (targets.some((item) => item.os === "android")) await import("./opentui-android")
-const appArchive = path.join(dir, ".cache", "bun-app-archive.bin")`,
-)
-
-replace(
   `  const parcelWatcherPackage = \`@parcel/watcher-\${item.os}-\${item.arch}\${item.os === "linux" ? \`-\${item.abi ?? "glibc"}\` : ""}\`
   const parcelWatcherPlugin: BunPlugin = {
     name: "parcel-watcher-binding",

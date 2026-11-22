@@ -87,6 +87,12 @@ runs:
           -isystem "$ndk_sysroot/usr/include/aarch64-linux-android" \
           "$header" >/dev/null
 
+    - name: Build and install OpenTUI for Android
+      shell: bash
+      env:
+        SOURCE_DIR: ${{ inputs.source-dir }}
+      run: bun "$SOURCE_DIR/packages/cli/script/opentui-android.ts"
+
     - name: Build Android Bun runtime with FFI
       uses: ./.github/actions/build-android-bun
       with:

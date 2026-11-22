@@ -4,7 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 
-const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v5-context-abi"
+const OPENTUI_ANDROID_PATCH = "opencode-termux-android-v6-target-libc"
 if (process.argv[2] === "--patch-only") {
   const file = process.argv[3]
   if (!file) throw new Error("Usage: opentui-android.ts --patch-only <build.zig>")
@@ -63,15 +63,17 @@ await Bun.write(
     `crt_dir=${ndk.libDir}`,
     "msvc_lib_dir=",
     "kernel32_lib_dir=",
-    "gcc_dir=",
+    `cc_dir=${ndk.libDir}`,
+    "darwin_sdk_dir=",
     "",
   ].join("\n"),
 )
+await $`zig libc -target ${target} ${libc}`
 
 patchOpenTUIBuild(path.join(source, "packages/native/build.zig"))
 patchOpenTUIClipboard(path.join(source, "packages/native/src/clipboard/host.zig"))
 await $`sh scripts/prepare-zig-deps.sh`.cwd(path.join(source, "packages/native"))
-await $`zig build -Dlibrary-target=${target} -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} --release=fast --libc ${libc}`.cwd(
+await $`zig build -Dlibrary-target=${target} -Dandroid-lib-dir=${ndk.libDir} -Dandroid-include-dir=${path.join(ndk.sysroot, "usr/include")} -Dandroid-arch-include-dir=${ndk.sysInclude} -Dandroid-libc=${libc} --release=fast`.cwd(
   path.join(source, "packages/native"),
 )
 
@@ -239,6 +241,7 @@ const GHOSTTY_VT_VERSION = "0.1.0-dev+b988efcf";
 
 // ${OPENTUI_ANDROID_PATCH}
 const AndroidPaths = struct {
+    libc: ?[]const u8 = null,
     library: ?[]const u8 = null,
     include: ?[]const u8 = null,
     arch_include: ?[]const u8 = null,
@@ -246,6 +249,7 @@ const AndroidPaths = struct {
 var android_paths = AndroidPaths{};`
   const optionsBefore = `    const macos_sdk_path = resolveMacOSSDKPath(b);`
   const optionsAfter = `    android_paths = .{
+        .libc = b.option([]const u8, "android-libc", "Android NDK libc descriptor for target libraries"),
         .library = b.option([]const u8, "android-lib-dir", "Android NDK library directory"),
         .include = b.option([]const u8, "android-include-dir", "Android NDK system include directory"),
         .arch_include = b.option([]const u8, "android-arch-include-dir", "Android NDK architecture include directory"),
@@ -316,6 +320,16 @@ ${abiImport}`
                 module.linkSystemLibrary("m", .{});
             }
         },`
+  const libraries = "    return .{ shared, static };"
+  // Global --libc also configures Zig's host build executable. Apply the NDK
+  // descriptor only to the two cross-compiled artifacts.
+  const targetLibc = `    if (target.result.abi == .android) {
+        const libc: std.Build.LazyPath = .{ .cwd_relative = android_paths.libc.? };
+        shared.setLibCFile(libc);
+        static.setLibCFile(libc);
+    }
+${libraries}`
+  if (original.split(libraries).length !== 2) throw new Error("Cannot configure OpenTUI target libc")
   if (!original.includes(pathsBefore)) throw new Error("Cannot add OpenTUI Android path storage")
   if (!original.includes(optionsBefore)) throw new Error("Cannot add OpenTUI Android build options")
   if (!original.includes(translatedBefore)) throw new Error("Cannot patch OpenTUI Android C translation includes")
@@ -328,6 +342,7 @@ ${abiImport}`
       .replace(optionsBefore, optionsAfter)
       .replace(translatedBefore, translatedAfter)
       .replace(abiImport, abiImportAfter)
+      .replace(libraries, targetLibc)
       .replace(before, after),
   )
 }

@@ -40,6 +40,9 @@ fn addNativeAudioDependencies(b: *std.Build, module: *std.Build.Module, target: 
         else => {},
     }
 }
+fn createLibraries() [2]*std.Build.Step.Compile {
+    return .{ shared, static };
+}
 `
 const clipboard = `extern "c" fn pthread_mach_thread_np(thread: std.c.pthread_t) std.c.mach_port_t;
 extern "c" fn pthread_tryjoin_np(thread: std.Thread.Handle, result: ?*?*anyopaque) c_int;
@@ -78,7 +81,9 @@ describe("OpenTUI Android build patch", () => {
 
     const first = await readFile(file, "utf8")
     expect(first.match(/defineCMacro\("_Nullable", ""\)/g)).toHaveLength(3)
-    expect(first.match(/opencode-termux-android-v5-context-abi/g)).toHaveLength(1)
+    expect(first.match(/opencode-termux-android-v6-target-libc/g)).toHaveLength(1)
+    expect(first).toContain("shared.setLibCFile(libc);")
+    expect(first).toContain("static.setLibCFile(libc);")
     expect(first).toContain("if (target.result.abi == .android) {\n        // Zig translate-c rejects")
     expect(first).toContain("if (target.result.abi == .android) {\n        // Keep Android header translation")
     const firstHost = await readFile(host, "utf8")
